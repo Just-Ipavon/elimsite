@@ -8,6 +8,7 @@ const Navbar = () => {
     { name: 'Home', path: '/', icon: Home },
     { name: 'Study Area', path: '/study', icon: BookOpen },
     { name: 'Practice IDE', path: '/ide', icon: Code },
+    { name: 'Exam Sim', path: '/exam', icon: BookOpen },
   ];
 
   return (

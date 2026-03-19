@@ -3,6 +3,7 @@ import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import StudyArea from './pages/StudyArea';
 import IdeArea from './pages/IdeArea';
+import ExamArea from './pages/ExamArea';
 
 function App() {
   return (
@@ -13,6 +14,7 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/study" element={<StudyArea />} />
           <Route path="/ide" element={<IdeArea />} />
+          <Route path="/exam" element={<ExamArea />} />
         </Routes>
       </main>
     </div>

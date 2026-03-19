@@ -1,9 +1,27 @@
+const baseTemplate = `#include <opencv2/opencv.hpp>
+#include <stdlib.h>
+
+using namespace cv;
+using namespace std;
+
+int main( int argc, char** argv ) {
+	Mat src = imread( argv[1] );
+	if(src.empty()) return -1;
+	Mat dst;
+	
+	// IL TUO CODICE QUI
+	
+	imshow("src", src);
+	waitKey(0);
+	return 0;
+}`;
+
 export const algorithms = [
   {
     id: "canny",
     name: "Canny Edge Detector",
     description:
-      "Finds edges in an image using the Canny algorithm. Implementa Gaussiana, Sobel per derivate x e y, calcolo magnitudo e fase, non-maximum suppression (controllo angoli per assottigliare i bordi) e thresholding con isteresi.",
+      "Finds edges in an image using the Canny algorithm. Implementa Gaussiana, Sobel per derivate x e y, calcolo magnitudo e fase, non-maximum suppression.",
     codeReference: `void Canny(const Mat src, Mat &dst) {
     Mat gauss, dx, dy, magnitude, phase;
     GaussianBlur(src, gauss, Size(5, 5), 0, 0);
@@ -57,15 +75,7 @@ export const algorithms = [
     }
     magnitude.copyTo(dst);
 }`,
-    cppSkeleton: `// Implementazione Canny
-void Canny(const Mat src, Mat &dst) {
-    // Inserisci il codice per step:
-    // 1. Gaussiana
-    // 2. Sobel dx e dy
-    // 3. Magnitudo e Fase
-    // 4. Non-maximum suppression (tramite fase)
-    // 5. Isteresi
-}`,
+    cppSkeleton: baseTemplate,
   },
   {
     id: "harris",
@@ -118,15 +128,7 @@ void harris(Mat& src, Mat& dst) {
     // 7
     circleCorners(R, dst);
 }`,
-    cppSkeleton: `// Implementazione Harris
-void harris(Mat& src, Mat& dst) {
-    // 1. Derivate parziali
-    // 2. Derivate quadrate
-    // 3-4. Smoothing Gaussiano sulle derivate quadrate
-    // 5. Calcolo determinante e traccia -> Risposta R
-    // 6. Normalizzazione
-    // 7. Disegno (opzionale)
-}`,
+    cppSkeleton: baseTemplate,
   },
   {
     id: "hough_circles",
@@ -166,13 +168,7 @@ void houghCircles(const Mat src, Mat& dst) {
                     circle(dst, Point(j,i), radius, Scalar(255,0,0), 2, LINE_AA);
                 }
 }`,
-    cppSkeleton: `// Implementazione Hough Circles
-void houghCircles(const Mat src, Mat& dst) {
-    // Sfoca, converte a Gray, ed esegue Canny per i bordi
-    // Crea Accumulator 3D per (x, y, raggio)
-    // Popola voti usando parametri parametrici del cerchio
-    // Trova i massimi nell'Accumulator e disegna i cerchi
-}`,
+    cppSkeleton: baseTemplate,
   },
   {
     id: "hough_lines",
@@ -223,13 +219,7 @@ void houghLines(Mat& src, Mat& dst){
                 line(dst,p1,p2,Scalar(0,0,255),2,LINE_AA);
             }
 }`,
-    cppSkeleton: `// Implementazione Hough Lines
-void houghLines(Mat& src, Mat& dst){
-    // Crea spazio di accumulatori per rho e theta
-    // Applica Canny
-    // Vota nell'accumulatore
-    // Disegna le linee (da Polari a Cartesiane)
-}`,
+    cppSkeleton: baseTemplate,
   },
   {
     id: "kmeans",
@@ -265,14 +255,7 @@ void Kmeans(const Mat src, Mat& dst) {
     }
     segment(dst, center, cluster); // Color output
 }`,
-    cppSkeleton: `// Implementazione K-means
-void Kmeans(const Mat src, Mat& dst) {
-    // 1. Inizializza centri K casuali
-    // 2. Loop fino a convergenza:
-    //    a. Assegna i pixel al centro più vicino
-    //    b. Ricalcola le medie dei cluster come nuovi centri
-    // 3. Ricolora l'immagine in output
-}`,
+    cppSkeleton: baseTemplate,
   },
   {
     id: "otsu",
@@ -311,13 +294,7 @@ int otsu(Mat& src) {
     }
     return kstar;
 }`,
-    cppSkeleton: `// Implementazione Otsu
-int otsu(Mat& src) {
-    // Calcola istogramma normalizzato
-    // Calcola la media globale
-    // Cerca la varianza intra-classe massima iterando sui k target
-    // Ritorna la soglia k ottimale
-}`,
+    cppSkeleton: baseTemplate,
   },
   {
     id: "otsu2k",
@@ -359,17 +336,13 @@ int otsu(Mat& src) {
     }
     return kstar;
 }`,
-    cppSkeleton: `// Implementazione Otsu Multiplo (2K/3K)
-vector<int> otsu2k(Mat& src){
-    // Algoritmo di Otsu espanso nested per i limiti
-    // Salva le 2 soglie massimizzanti
-}`,
+    cppSkeleton: baseTemplate,
   },
   {
     id: "region_growing",
     name: "Region Growing",
     description:
-      "Algoritmo a Stack per accrescere la regione. Usa una maschera su 8 direzioni basata su una soglia di differenza di colore.",
+      "Algoritmo a Stack per accrescere la regione. Usa una maschera su 8 direzioni.",
     codeReference: `void grow(const Mat src, const Mat dst, Mat& mask, Point seed) {
     stack<Point> front;
     front.push(seed);
@@ -410,13 +383,7 @@ void regionGrowing(const Mat src, Mat& dst) {
                 mask -= mask;
             }
 }`,
-    cppSkeleton: `// Implementazione Region Growing
-void regionGrowing(const Mat src, Mat& dst) {
-    // Itera tutti i pixel non etichettati
-    // Usa uno Stack e un metodo 'grow'
-    // Valuta la distnza spaziale e di colore dei vicini (8 direzioni)
-    // Etichetta o scarta come rumore
-}`,
+    cppSkeleton: baseTemplate,
   },
   {
     id: "split_merge",
@@ -459,12 +426,6 @@ void splitAndMerge(Mat& src) {
     merge(root); // Quadtree merging logic
     segment( srcSeg, root );
 }`,
-    cppSkeleton: `// Implementazione Split and Merge
-void splitAndMerge(Mat& src) {
-    // Modella la struttura QuadTree
-    // Funzione Split ricorsiva valutata sulla varianza
-    // Funzione Merge che appiana rami figli identici
-    // Piatto d'output colorato
-}`,
+    cppSkeleton: baseTemplate,
   },
 ];
