@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-dracula-bg text-dracula-fg font-sans antialiased;
+  }
+}
+
+/* Custom Scrollbar for Dracula theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-dracula-bg;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-dracula-current rounded;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-dracula-comment;
+}
+
+/* Glassmorphism utility */
+.glass {
+  @apply bg-dracula-current bg-opacity-40 backdrop-blur-md border border-dracula-comment border-opacity-30;
+}
