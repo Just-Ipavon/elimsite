@@ -27,3 +27,13 @@
 .glass {
   @apply bg-dracula-current bg-opacity-40 backdrop-blur-md border border-dracula-comment border-opacity-30;
 }
+
+/* Monaco Decoration for Explanations */
+.explanation-highlight {
+  background-color: rgba(189, 147, 249, 0.15) !important;
+  border-left: 3px solid #ff79c6 !important;
+  cursor: pointer;
+}
+.explanation-highlight:hover {
+  background-color: rgba(189, 147, 249, 0.25) !important;
+}

@@ -2,14 +2,19 @@ import React, { useState, useEffect, useRef } from 'react';
 import { algorithms } from '../data/algorithms';
 import { Play, Image as ImageIcon } from 'lucide-react';
 import lenaSrc from '../assets/lena.png';
+import Editor from '@monaco-editor/react';
 
 const StudyArea = () => {
   const [selectedAlgo, setSelectedAlgo] = useState(algorithms[0]);
   const [cvReady, setCvReady] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [activeExplanation, setActiveExplanation] = useState(null);
   
   const imgRef = useRef(null);
   const canvasRef = useRef(null);
+  const editorRef = useRef(null);
+  const monacoRef = useRef(null);
+  const decorationsCollection = useRef(null);
 
   useEffect(() => {
     // Check if OpenCV is loaded
@@ -21,6 +26,79 @@ const StudyArea = () => {
     }, 500);
     return () => clearInterval(checkCv);
   }, []);
+
+  const updateDecorations = (editor, monaco, algo) => {
+    setActiveExplanation(null);
+    if (!editor || !monaco) return;
+
+    const code = algo.codeReference;
+    const parsedExplanations = (algo.explanations || []).map(exp => {
+      const startIndex = code.indexOf(exp.startMatch);
+      const endIndex = exp.endMatch ? code.indexOf(exp.endMatch) : startIndex;
+      if (startIndex === -1) return null;
+
+      const startLine = code.substring(0, startIndex).split('\n').length;
+      let endLine = code.substring(0, endIndex).split('\n').length;
+      if (exp.endMatch) {
+         endLine += exp.endMatch.split('\n').length - 1;
+      }
+      return { ...exp, startLine, endLine };
+    }).filter(Boolean);
+
+    editor.parsedExplanations = parsedExplanations;
+
+    const decorations = parsedExplanations.map(exp => ({
+      range: new monaco.Range(exp.startLine, 1, exp.endLine, 1),
+      options: {
+        isWholeLine: true,
+        className: 'explanation-highlight',
+      }
+    }));
+
+    if (decorationsCollection.current) {
+        decorationsCollection.current.clear();
+    }
+    decorationsCollection.current = editor.createDecorationsCollection(decorations);
+  };
+
+  const handleEditorMount = (editor, monaco) => {
+    editorRef.current = editor;
+    monacoRef.current = monaco;
+    
+    editor.onMouseDown((e) => {
+      const line = e.target.position?.lineNumber;
+      if (!line) return;
+      
+      const exps = editorRef.current.parsedExplanations || [];
+      const clickedExp = exps.find(exp => line >= exp.startLine && line <= exp.endLine);
+      setActiveExplanation(clickedExp || null);
+    });
+
+    monaco.editor.defineTheme('dracula', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [
+        { background: '282a36' },
+        { token: '', foreground: 'f8f8f2', background: '282a36' },
+      ],
+      colors: {
+        'editor.background': '#282a36',
+        'editor.foreground': '#f8f8f2',
+        'editorLineNumber.foreground': '#6272a4',
+        'editor.selectionBackground': '#44475a',
+        'editor.lineHighlightBackground': '#44475a80',
+      }
+    });
+    monaco.editor.setTheme('dracula');
+    
+    updateDecorations(editor, monaco, selectedAlgo);
+  };
+
+  useEffect(() => {
+    if (editorRef.current && monacoRef.current) {
+        updateDecorations(editorRef.current, monacoRef.current, selectedAlgo);
+    }
+  }, [selectedAlgo]);
 
   const runAlgorithm = () => {
     if (!cvReady || !imgRef.current || !canvasRef.current) return;
@@ -140,13 +218,41 @@ const StudyArea = () => {
             <p className="text-dracula-comment text-sm mb-6 leading-relaxed">
               {selectedAlgo.description}
             </p>
+
+            {activeExplanation && (
+              <div className="mt-4 p-5 border-l-4 border-dracula-pink bg-dracula-bg bg-opacity-80 rounded-lg shadow-lg">
+                 <h4 className="font-bold text-dracula-pink mb-2 text-lg">{activeExplanation.title}</h4>
+                 <p className="text-dracula-fg leading-relaxed">{activeExplanation.text}</p>
+              </div>
+            )}
+            {!activeExplanation && selectedAlgo.explanations?.length > 0 && (
+              <div className="mt-4 p-4 border-l-4 border-dracula-cyan bg-dracula-bg bg-opacity-50 rounded-lg">
+                 <p className="text-sm text-dracula-cyan italic flex items-center gap-2">
+                   💡 Clicca sulle zone evidenziate nel codice per esplorarne il funzionamento!
+                 </p>
+              </div>
+            )}
           </div>
 
-          <div className="glass p-6 rounded-xl border border-dracula-comment flex-grow">
+          <div className="glass p-6 rounded-xl border border-dracula-comment flex-grow flex flex-col min-h-[500px]">
             <h3 className="text-lg font-bold text-dracula-yellow mb-4">C++ Reference Code</h3>
-            <pre className="bg-dracula-bg p-4 flex-grow rounded-lg overflow-x-auto whitespace-pre-wrap break-all text-sm text-dracula-fg border border-dracula-current font-mono shadow-inner">
-              <code>{selectedAlgo.codeReference}</code>
-            </pre>
+            <div className="flex-grow rounded-lg overflow-hidden border border-dracula-current shadow-inner">
+              <Editor
+                height="100%"
+                defaultLanguage="cpp"
+                theme="dracula"
+                value={selectedAlgo.codeReference}
+                onMount={handleEditorMount}
+                options={{
+                  readOnly: true,
+                  minimap: { enabled: false },
+                  wordWrap: 'on',
+                  fontSize: 14,
+                  scrollBeyondLastLine: false,
+                  padding: { top: 16, bottom: 16 }
+                }}
+              />
+            </div>
           </div>
         </div>
 
@@ -162,11 +268,11 @@ const StudyArea = () => {
                 className="flex items-center space-x-2 bg-dracula-green text-dracula-bg px-5 py-2 rounded-lg font-bold hover:bg-opacity-80 transition-colors disabled:opacity-50"
               >
                 <Play size={16} fill="currentColor" />
-                <span>{processing ? 'Processing...' : (cvReady ? 'Run Algorithm' : 'Loading Engine...')}</span>
+                <span>{processing ? 'Processing...' : (cvReady ? 'Run Algo' : 'Loading Engine...')}</span>
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-6 w-full">
                <div className="flex flex-col items-center">
                  <h4 className="text-sm font-semibold text-dracula-comment mb-2">Source (Lena)</h4>
                  <div className="bg-dracula-bg border-2 border-dashed border-dracula-current p-1 rounded-lg w-full max-w-[256px]">

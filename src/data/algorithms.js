@@ -22,6 +22,26 @@ export const algorithms = [
     name: "Canny Edge Detector",
     description:
       "Finds edges in an image using the Canny algorithm. Implementa Gaussiana, Sobel per derivate x e y, calcolo magnitudo e fase, non-maximum suppression.",
+    explanations: [
+      {
+        startMatch: "Mat gauss, dx, dy, magnitude, phase;",
+        endMatch: "cv::phase(dx, dy, phase, true);",
+        title: "Smoothing & Gradienti (Sobel)",
+        text: "Primo step: il filtro Gaussiano rimuove il rumore. Poi si applicano i filtri di Sobel per trovare i gradienti orizzontali e verticali, da cui si calcola magnitudo (forza del bordo) e fase (orientamento).",
+      },
+      {
+        startMatch: "for (int y = 1; y < magnitude.rows - 1; y++) {",
+        endMatch: "magnitude.at<uchar>(y, x) = 0;\n        }\n    }",
+        title: "Non-Maximum Suppression",
+        text: "Passo per assottigliare i bordi: il valore del gradiente di ogni pixel viene confrontato con i due vicini lungo la direzione identificata dalla fase. Se non è un massimo locale, viene scartato (reso nero).",
+      },
+      {
+        startMatch: "int th1 = 20;",
+        endMatch: "magnitude.copyTo(dst);",
+        title: "Hysteresis Thresholding",
+        text: "Ultimo step con doppia soglia. I pixel con gradiente > th2 sono bordi 'certi'. I pixel tra th1 e th2 sono bordi 'deboli', mantenuti solo se adiacenti a un bordo certo.",
+      },
+    ],
     codeReference: `#include <opencv2/opencv.hpp>
 #include <stdlib.h>
 
@@ -99,6 +119,26 @@ int main( int argc, char** argv ) {
     name: "Harris Corner Detection",
     description:
       "Detects corners usando derivate, smoothing, traccia e determinante della matrice di autocorrelazione per calcolare il response R.",
+    explanations: [
+      {
+        startMatch: "Mat Dx, Dy;",
+        endMatch: "multiply(Dx, Dy, DxDy);",
+        title: "Derivate Spaziali",
+        text: "Si calcolano le derivate orientate (Dx, Dy) tramite l'operatore di Sobel e poi i loro prodotti (Dx2, Dy2, DxDy) che andranno a formare la matrice di autocorrelazione.",
+      },
+      {
+        startMatch: "GaussianBlur(Dx2, C00",
+        endMatch: "C10 = C01;",
+        title: "Smoothing Matrice (Finestra Pesata)",
+        text: "I prodotti delle derivate vengono sfocati gaussianamente per simulare una somma pesata di finestra attorno ad ogni pixel, creando le componenti effettive C00, C11, C01 della matrice.",
+      },
+      {
+        startMatch: "multiply(C00, C11, PPD);",
+        endMatch: "R = det - 0.04f * trace2;",
+        title: "Response Score (R)",
+        text: "Si approssima il calcolo degli autovalori usando la formula R = Det(M) - k * Trace(M)^2. Un valore R alto e positivo ci assicura di essere caduti proprio su uno spigolo (corner).",
+      },
+    ],
     codeReference: `#include <opencv2/opencv.hpp>
 #include <stdlib.h>
 
@@ -163,6 +203,25 @@ int main( int argc, char** argv ) {
     name: "Hough Circles",
     description:
       "Detects circles (Hough Transform). Calcola i gradienti con Canny e popola uno spazio dei voti 3D (x, y, raggio).",
+    explanations: [
+      {
+        startMatch: "Canny(src_gray, edges, 100, 112);",
+        title: "Estrazione preliminare dei bordi",
+        text: "La trasformata di Hough lavora specificamente sui pixel di bordo, quindi usiamo Canny in anticipo per creare una mappa binaria delineata.",
+      },
+      {
+        startMatch: "for (int radius=minRadius; radius<maxRadius; radius++)",
+        endMatch: "votes.at<float>(b,a,radius-minRadius)++;",
+        title: "Spazio di Accumulazione (Votazioni)",
+        text: "Per ogni punto del bordo, e per ogni possibile raggio, calcoliamo le coordinate (a,b) del centro del cerchio tramite angolo polare iterativo e 'votiamo' quella coordinata nello spazio di Hough 3D.",
+      },
+      {
+        startMatch: "if (votes.at<float>(i,j,radius-minRadius) >= 123)",
+        endMatch: "circle(dst, Point(j,i), radius",
+        title: "Recupero Cerchi (Massimi)",
+        text: "Esaminiamo i voti accumulati: se una cella (x,y,r) ha ricevuto sufficienti voti (>123), confermiamo il cerchio e procediamo a disegnarlo!",
+      },
+    ],
     codeReference: `#include <opencv2/opencv.hpp>
 #include <stdlib.h>
 
@@ -219,6 +278,26 @@ int main( int argc, char** argv ) {
     name: "Hough Lines",
     description:
       "Rilevamento linee (Hough Transform). Spazio di accumulazione rho-theta per estrarre rette dai bordi (Canny).",
+    explanations: [
+      {
+        startMatch: "int maxDist = hypot(src.rows, src.cols);",
+        endMatch: "Canny(gsrc,edges,50,150);",
+        title: "Setup & Canny",
+        text: "Calcoliamo la massima estensione possibile della retta (la diagonale) per dimensionare l'accumulatore, e filtriamo l'immagine per avere solo i bordi binari.",
+      },
+      {
+        startMatch: "for(theta = 0; theta <= 180; theta++){",
+        endMatch: "votes[rho][theta]++;",
+        title: "Votazione (ρ e θ)",
+        text: "Scorrendo i pixel di bordo (255), iteriamo su tutti i 180 angoli e calcoliamo ρ. Incrementiamo il contatore dei voti nella matrice parametrica (rho, theta) per evidenziare la retta passante per il pixel.",
+      },
+      {
+        startMatch: "if(votes[i][j] >= 100){",
+        endMatch: "line(dst,p1,p2,Scalar(0,0,255),2,LINE_AA);",
+        title: "Estrazione Rette",
+        text: "Se una cellula ha più di 100 hit, vuol dire che 100 pixel di bordo appartengono a quella stessa retta polare. Trasformiamo quindi in coordinate Cartesiane (p1, p2) e la disegniamo fissa.",
+      },
+    ],
     codeReference: `#include <opencv2/opencv.hpp>
 #include <stdlib.h>
 
@@ -282,6 +361,32 @@ int main( int argc, char** argv ) {
     name: "K-means Clustering",
     description:
       "Algoritmo K-means nativo. Sceglie centri random, ricalcola distanze e sposta i centri iterativamente fino a convergenza o soglia raggiunta.",
+    explanations: [
+      {
+        startMatch: "void computeRandomCenter",
+        endMatch: "cluster.push_back( vector<Point>() );\n\t}",
+        title: "1. Semi Casuali",
+        text: "Estrae col generatore uniform casuale K punti nell'immagine e ne assume il colore come Centro Iniziale per ciascun segmento.",
+      },
+      {
+        startMatch: "void populateCluster",
+        endMatch: "cluster.at(labelID).push_back(Point(j,i));\n\t\t}",
+        title: "2. Assegnazione",
+        text: "Calcola la distanza Euclidea tra il colore del pixel attuale e ciascuno dei K cluster. Assegna inevitabilmente il pixel al cluster il cui centro dista meno matematicamente.",
+      },
+      {
+        startMatch: "double adjustCenter",
+        endMatch: "return change;",
+        title: "3. Rideterminazione del Centro",
+        text: "Ora che migliaia di pixel appartengono allo stesso gruppo, l'algoritmo fa la media dei loro colori in R, G e B, generando il vero colore mediano e aggiornando il Centro del cluster. Calcola anche di quanto il centro si è 'spostato' (change).",
+      },
+      {
+        startMatch: "while (dist > th) {",
+        endMatch: "segment(dst, center, cluster);",
+        title: "4. Loop di Convergenza",
+        text: "Finché la distanza di aggiustamento dei baricentri è maggiore di una soglia minima (th), riassocia da zero i pixel e calcola i nuovi centri. Alla fine si usa 'segment' per colorare appiattiti i cluster di output!",
+      },
+    ],
     codeReference: `#include <opencv2/opencv.hpp>
 #include <stdlib.h>
 
@@ -386,6 +491,26 @@ int main( int argc, char** argv ) {
     name: "Otsu Thresholding",
     description:
       "Otsu originale. Calcola istogramma, probabilità cumulate, e massimizza la varianza intraclass per trovare la soglia K ottimale.",
+    explanations: [
+      {
+        startMatch: "vector<double> normalizedHistogram(Mat& src) {",
+        endMatch: "return his;",
+        title: "Istogramma Normalizzato (Probabilità)",
+        text: "Conta quanti pixel hanno un certo livello di grigio, dopodichè divide tutto per il numero totale dei pixel. Il risultato è la Probabilità (da 0 a 1) di beccare quel colore nell'immagine.",
+      },
+      {
+        startMatch: "for (int i = 0; i < 256; i++) gMean += i * his[i];",
+        endMatch: "for (int i = 0; i < 256; i++) gMean += i * his[i];",
+        title: "Media Globale (gMean)",
+        text: "Costituisce la media pesata di tutta l'immagine basata sul suo istogramma. Serve alla varianza per quantificare lo scarto delle due classi.",
+      },
+      {
+        startMatch: "for (int i = 0; i < 256; i++) {",
+        endMatch: "kstar = i;\n        }",
+        title: "Massimizzazione Varianza Between Classes",
+        text: "Iteriamo ogni possibile intensità (soglia i). Calcoliamo la Varianza Tra Le Classi: se è superiore al massimo trovato finora, aggiorniamo il max e settiamo Kstar alla nuova soglia ottima.",
+      },
+    ],
     codeReference: `#include <opencv2/opencv.hpp>
 #include <stdlib.h>
 
@@ -443,6 +568,20 @@ int main( int argc, char** argv ) {
     name: "Otsu 2K (Multi-level)",
     description:
       "Estensione di Otsu per multipli threshold. Calcola varianza combinata su N settori per trovare le doppie/triple soglie di binarizzazione.",
+    explanations: [
+      {
+        startMatch: "vector<double> currProb(3,0.0f);",
+        endMatch: "vector<int> kstar(2,0);",
+        title: "Setup N-Classi",
+        text: "Dal momento che vogliamo segmentare l'immagine con soglie multiple (es. 2 soglie = 3 classi finali), istanziamo vettori tripli per tenere conto delle probabilità sommate e delle medie accumulate di ogni classe.",
+      },
+      {
+        startMatch: "for(int i=0; i<256-2; i++){",
+        endMatch: "currProb[2] = currCumMean[2] = 0.0f;\n        }",
+        title: "Ricerca Esaustiva Combinata",
+        text: "Scorre tutte le possibili combinazioni delle due soglie (i e j) per partizionare l'istogramma, ricalcolando la varianza di separazione (sommatoria per ogni classe w: currProb * (mediaClasse - mediaGlobale)^2). Ritorna le soglie kstar[0] e kstar[1] che massimizzano lo stacco cromatico!",
+      },
+    ],
     codeReference: `#include <opencv2/opencv.hpp>
 #include <stdlib.h>
 
@@ -523,6 +662,26 @@ int main( int argc, char** argv ) {
     name: "Region Growing",
     description:
       "Algoritmo a Stack per accrescere la regione. Usa una maschera su 8 direzioni.",
+    explanations: [
+      {
+        startMatch: "const Point pointShift2D[8] = {",
+        endMatch: "Point( 1,-1), Point( 1, 0), Point( 1, 1)\n};",
+        title: "Mappa delle Adiacenze",
+        text: "Offre lo scarto flat delle 8 posizioni adiacenti (sopra, lati, e 4 diagonali) necessario per procedere con l'esplorazione del pixel.",
+      },
+      {
+        startMatch: "while (!front.empty()) {",
+        endMatch: "front.push(neigh);",
+        title: "Navigazione Maschera Condizionata",
+        text: "Controlla ogni adiacenza alla cella attuale nello Stack: se la distanza cromatica (somma dei quadrati di R, G, B) è sotto la Soglia (th) e la cella non è già stata visitata, il compagno è idoneo e viene inserito nello stack di espansione!",
+      },
+      {
+        startMatch: "if (sum(mask).val[0] > minRegionArea) {",
+        endMatch: "mask -= mask;\n            }",
+        title: "Integrazione Regione o Rumore",
+        text: "Si isolano le regioni piccolissime (che contano come rumore sfuso, colorate in grigio opzionale / scartate) e le regioni valide più grandi vengono finalmente impresse sulla 'dst' con la Label dedicata, incrementata dopo ogni area trovata.",
+      },
+    ],
     codeReference: `#include <opencv2/opencv.hpp>
 #include <stdlib.h>
 #include <stack>
@@ -594,6 +753,35 @@ int main( int argc, char** argv ) {
     name: "Split and Merge",
     description:
       "Usa una struttura QuadTree (TNode) ricorsiva per dividere l'immagine per deviazione standard del colore, e le raggruppa in base a vicinanza.",
+    explanations: [
+      {
+        startMatch: "class TNode {",
+        endMatch:
+          "void addRegion(TNode* region) { merged.push_back(region); }\n};",
+        title: "QuadTree Wrapper",
+        text: "Per segmentare lo spazio l'algoritmo fa uso di un albero a 4 settori (UL, UR, LR, LL). Questa classe incapsula ogni nodo registrando l'area, le statistiche cromatiche (mean, stdev) e le regioni parzialmente fuse.",
+      },
+      {
+        startMatch: "TNode* split(Mat& src, Rect R) {",
+        endMatch: "return root;",
+        title: "Processo di SPLIT",
+        text: "Partendo dall'immagine globale, se la Deviazione Standard della zona supera 30, significa che non è un'area uniforme. Si divide il rettangolo in 4 sotto-rettangoli precisi e per ciascuno si richiama ricorsivamente SPLIT.",
+      },
+      {
+        startMatch: "void merge(TNode* root) {",
+        endMatch:
+          "root->setMergedB(0); root->setMergedB(1); root->setMergedB(2); root->setMergedB(3); \n\t}\n}",
+        title: "Processo di MERGE",
+        text: "Arrivati alla profondità minima del frammento in Split, l'algoritmo risale riunendo in macro-aree le celle adiacenti che mostrano omogeneità strutturale (stddev <= 30), accorpadole nello stesso puntatore d'area Node.",
+      },
+      {
+        startMatch: "void segment(Mat& src, TNode* root) {",
+        endMatch:
+          "if ( !root->getMergedB(3) ) segment( src, root->getLL() );\n\t\t}\n\t}\n}",
+        title: "Finalizzazione e Ricolorazione",
+        text: "Una volta consolidato l'albero di Merge, si naviga il grafo calcolando in automatico l'Intensity Media totale dei blocchi espansi e ricolorando il Canvas finale con la media globale dei micro-quadrati fusi.",
+      },
+    ],
     codeReference: `#include <opencv2/opencv.hpp>
 #include <stdlib.h>
 #include <vector>
