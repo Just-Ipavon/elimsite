@@ -17,11 +17,18 @@ const StudyArea = () => {
   const decorationsCollection = useRef(null);
 
   useEffect(() => {
-    // Check if OpenCV is loaded
     const checkCv = setInterval(() => {
-      if (window.cv && window.cv.Mat) {
-        setCvReady(true);
-        clearInterval(checkCv);
+      if (window.cv) {
+        if (window.cv.Mat) {
+          setCvReady(true);
+          clearInterval(checkCv);
+        } else if (window.cv instanceof Promise || window.cv.then) {
+          window.cv.then((resolvedCv) => {
+            window.cv = resolvedCv;
+            setCvReady(true);
+          }).catch(err => console.error("CV Init Error:", err));
+          clearInterval(checkCv);
+        }
       }
     }, 500);
     return () => clearInterval(checkCv);
