@@ -22,17 +22,24 @@ const ExamArea = () => {
     setCode(randomAlgo.cppSkeleton);
 
     const checkCv = setInterval(() => {
-      if (window.cv) {
-        if (window.cv.Mat) {
-          setCvReady(true);
-          clearInterval(checkCv);
-        } else if (window.cv instanceof Promise || window.cv.then) {
-          window.cv.then((resolvedCv) => {
+      if (window.cv && window.cv.Mat) {
+        setCvReady(true);
+        clearInterval(checkCv);
+      } else if (window.cv && typeof window.cv === 'function') {
+        const cvPromise = window.cv();
+        if (cvPromise && typeof cvPromise.then === 'function') {
+          cvPromise.then((resolvedCv) => {
             window.cv = resolvedCv;
             setCvReady(true);
-          }).catch(err => console.error("CV Init Error:", err));
-          clearInterval(checkCv);
+          }).catch(console.error);
         }
+        clearInterval(checkCv);
+      } else if (window.cv && typeof window.cv.then === 'function') {
+        window.cv.then((resolvedCv) => {
+          window.cv = resolvedCv;
+          setCvReady(true);
+        }).catch(console.error);
+        clearInterval(checkCv);
       }
     }, 500);
 
