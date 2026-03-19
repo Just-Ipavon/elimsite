@@ -17,24 +17,10 @@ const StudyArea = () => {
   const decorationsCollection = useRef(null);
 
   useEffect(() => {
+    // Check se OpenCV è caricato e pronto
     const checkCv = setInterval(() => {
       if (window.cv && window.cv.Mat) {
         setCvReady(true);
-        clearInterval(checkCv);
-      } else if (window.cv && typeof window.cv === 'function') {
-        const cvPromise = window.cv();
-        if (cvPromise && typeof cvPromise.then === 'function') {
-          cvPromise.then((resolvedCv) => {
-            window.cv = resolvedCv;
-            setCvReady(true);
-          }).catch(console.error);
-        }
-        clearInterval(checkCv);
-      } else if (window.cv && typeof window.cv.then === 'function') {
-        window.cv.then((resolvedCv) => {
-          window.cv = resolvedCv;
-          setCvReady(true);
-        }).catch(console.error);
         clearInterval(checkCv);
       }
     }, 500);

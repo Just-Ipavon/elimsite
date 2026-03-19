@@ -25,21 +25,6 @@ const ExamArea = () => {
       if (window.cv && window.cv.Mat) {
         setCvReady(true);
         clearInterval(checkCv);
-      } else if (window.cv && typeof window.cv === 'function') {
-        const cvPromise = window.cv();
-        if (cvPromise && typeof cvPromise.then === 'function') {
-          cvPromise.then((resolvedCv) => {
-            window.cv = resolvedCv;
-            setCvReady(true);
-          }).catch(console.error);
-        }
-        clearInterval(checkCv);
-      } else if (window.cv && typeof window.cv.then === 'function') {
-        window.cv.then((resolvedCv) => {
-          window.cv = resolvedCv;
-          setCvReady(true);
-        }).catch(console.error);
-        clearInterval(checkCv);
       }
     }, 500);
 
