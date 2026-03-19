@@ -113,11 +113,11 @@ const StudyArea = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-6 pb-10">
-      <div className="flex flex-col md:flex-row gap-6">
+    <div className="w-full max-w-[1920px] mx-auto p-4 md:p-6 md:px-10 pb-10">
+      <div className="flex flex-col lg:flex-row gap-6">
         
         {/* Left Col - Info */}
-        <div className="w-full md:w-1/2 flex flex-col gap-4">
+        <div className="w-full lg:w-2/3 flex flex-col gap-4">
           <div className="glass p-6 rounded-xl border border-dracula-comment">
             <h1 className="text-3xl font-bold font-mono text-dracula-cyan mb-2">Algorithm Study</h1>
             <p className="text-dracula-comment mb-6">Select an algorithm to read the C++ implementation. Test it visually on the right using OpenCV.js.</p>
@@ -144,14 +144,14 @@ const StudyArea = () => {
 
           <div className="glass p-6 rounded-xl border border-dracula-comment flex-grow">
             <h3 className="text-lg font-bold text-dracula-yellow mb-4">C++ Reference Code</h3>
-            <pre className="bg-dracula-bg p-4 rounded-lg overflow-x-auto text-sm text-dracula-fg border border-dracula-current font-mono shadow-inner">
+            <pre className="bg-dracula-bg p-4 flex-grow rounded-lg overflow-x-auto whitespace-pre-wrap break-all text-sm text-dracula-fg border border-dracula-current font-mono shadow-inner">
               <code>{selectedAlgo.codeReference}</code>
             </pre>
           </div>
         </div>
 
         {/* Right Col - Visual Testing */}
-        <div className="w-full md:w-1/2 glass p-6 rounded-xl border border-dracula-comment flex flex-col items-center">
+        <div className="w-full lg:w-1/3 glass p-6 rounded-xl border border-dracula-comment flex flex-col items-center">
             <div className="w-full flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold text-dracula-fg flex items-center gap-2">
                 <ImageIcon className="text-dracula-green" /> Visualizer
