@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { algorithms } from '../data/algorithms';
 import { Play, Image as ImageIcon } from 'lucide-react';
+import lenaSrc from '../assets/lena.png';
 
 const StudyArea = () => {
   const [selectedAlgo, setSelectedAlgo] = useState(algorithms[0]);
@@ -44,11 +45,13 @@ const StudyArea = () => {
             dst = new cv.Mat(src.rows, src.cols, cv.CV_32FC1);
             cv.cornerHarris(gray, dst, 2, 3, 0.04);
             cv.normalize(dst, dst, 0, 255, cv.NORM_MINMAX, cv.CV_8U);
+            cv.convertScaleAbs(dst, dst, 1, 0);
+            cv.cvtColor(dst, dst, cv.COLOR_GRAY2RGBA);
             break;
           case 'hough_circles':
             dst = src.clone();
             let circles = new cv.Mat();
-            cv.HoughCircles(gray, circles, cv.HOUGH_GRADIENT, 1, 45, 75, 30, 0, 0);
+            cv.HoughCircles(gray, circles, cv.HOUGH_GRADIENT, 1, 45, 75, 40, 0, 0);
             for (let i = 0; i < circles.cols; ++i) {
                 let x = circles.data32F[i * 3];
                 let y = circles.data32F[i * 3 + 1];
@@ -81,18 +84,16 @@ const StudyArea = () => {
             cv.threshold(gray, dst, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
             break;
           case 'otsu2k':
-            // Adaptive threshold as approximation for multi-level Otsu visually
             cv.adaptiveThreshold(gray, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
             break;
           case 'region_growing':
             dst = src.clone();
             let mask = new cv.Mat.zeros(src.rows + 2, src.cols + 2, cv.CV_8U);
-            cv.floodFill(dst, mask, new cv.Point(50, 50), [255, 0, 0, 255], new cv.Rect(), [20, 20, 20, 0], [20, 20, 20, 0], 4 | (255 << 8) | cv.FLOODFILL_FIXED_RANGE);
+            cv.floodFill(dst, mask, new cv.Point(100, 100), [255, 0, 0, 255], new cv.Rect(), [20, 20, 20, 0], [20, 20, 20, 0], 4 | (255 << 8) | cv.FLOODFILL_FIXED_RANGE);
             mask.delete();
             break;
           case 'kmeans':
           case 'split_merge':
-            // Approximate with blur / posterize since these are not natively accessible in cv.js easily
             cv.medianBlur(src, dst, 15);
             break;
           default:
@@ -105,6 +106,7 @@ const StudyArea = () => {
         gray.delete();
       } catch (err) {
         console.error("OpenCV execution error:", err);
+        alert("Errore nell'esecuzione di OpenCV.js: " + err);
       }
       setProcessing(false);
     }, 100);
@@ -125,7 +127,6 @@ const StudyArea = () => {
               value={selectedAlgo.id}
               onChange={(e) => {
                 setSelectedAlgo(algorithms.find(a => a.id === e.target.value));
-                // Clear canvas on change
                 const ctx = canvasRef.current?.getContext('2d');
                 if (ctx) ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
               }}
@@ -171,10 +172,9 @@ const StudyArea = () => {
                  <div className="bg-dracula-bg border-2 border-dashed border-dracula-current p-1 rounded-lg w-full max-w-[256px]">
                     <img 
                       ref={imgRef}
-                      src="/lena.png" 
+                      src={lenaSrc} 
                       alt="Source Lena" 
                       className="w-full h-auto rounded"
-                      crossOrigin="anonymous"
                     />
                  </div>
                </div>
