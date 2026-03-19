@@ -234,9 +234,9 @@ const StudyArea = () => {
             )}
           </div>
 
-          <div className="glass p-6 rounded-xl border border-dracula-comment flex-grow flex flex-col min-h-[500px]">
+          <div className="glass p-6 rounded-xl border border-dracula-comment flex-grow flex flex-col">
             <h3 className="text-lg font-bold text-dracula-yellow mb-4">C++ Reference Code</h3>
-            <div className="flex-grow rounded-lg overflow-hidden border border-dracula-current shadow-inner">
+            <div className="w-full h-[500px] lg:h-[700px] rounded-lg overflow-hidden border border-dracula-current shadow-inner">
               <Editor
                 height="100%"
                 defaultLanguage="cpp"
