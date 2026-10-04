@@ -6,6 +6,7 @@ import lenaSrc from '../assets/lena.png';
 import { DRACULA_THEME, baseEditorOptions, defineDraculaTheme } from '../lib/monacoTheme';
 import { clearCanvas, runVisualAlgorithm, useOpenCv } from '../lib/opencv';
 import { verifySolution } from '../lib/verify';
+import { applyDiagnostics, diagnoseCode } from '../lib/diagnostics';
 import VerificationResult from '../components/VerificationResult';
 
 const EXAM_DURATION_S = 90 * 60;
@@ -34,6 +35,22 @@ const ExamArea = () => {
 
   const imgRef = useRef(null);
   const canvasRef = useRef(null);
+  const editorRef = useRef(null);
+  const monacoRef = useRef(null);
+  const [diagnostics, setDiagnostics] = useState([]);
+
+  const setProblems = (list) => {
+    setDiagnostics(list);
+    applyDiagnostics(monacoRef.current, editorRef.current, list);
+  };
+
+  const goToLine = (line, column = 1) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.revealLineInCenter(line);
+    editor.setPosition({ lineNumber: line, column });
+    editor.focus();
+  };
 
   // Il tempo residuo è calcolato dalla scadenza assoluta, così non "deriva"
   // se il tab resta in background e i timer vengono rallentati.
@@ -54,12 +71,17 @@ const ExamArea = () => {
     setSelectedAlgo(algo);
     setCode(algo.cppSkeleton);
     setVerificationResult(null);
+    setProblems([]);
     setDeadline(Date.now() + EXAM_DURATION_S * 1000);
     setTimeLeft(EXAM_DURATION_S);
     clearCanvas(canvasRef.current);
   };
 
-  const verifyCode = () => setVerificationResult(verifySolution(code, selectedAlgo.codeReference));
+  // In esame gli errori vengono evidenziati senza mostrare le righe del riferimento.
+  const verifyCode = () => {
+    setVerificationResult(verifySolution(code, selectedAlgo.codeReference));
+    setProblems(diagnoseCode(code, selectedAlgo.codeReference, { revealReference: false }));
+  };
 
   const runVisualizer = () => {
     if (cvStatus !== 'ready' || !imgRef.current || !canvasRef.current) return;
@@ -129,6 +151,10 @@ const ExamArea = () => {
             value={code}
             onChange={(value) => setCode(value ?? '')}
             beforeMount={defineDraculaTheme}
+            onMount={(editor, monaco) => {
+              editorRef.current = editor;
+              monacoRef.current = monaco;
+            }}
             theme={DRACULA_THEME}
             options={{ ...baseEditorOptions, fontSize: 15, padding: { top: 40 }, readOnly: timeUp }}
           />
@@ -156,6 +182,8 @@ const ExamArea = () => {
                 result={verificationResult}
                 successTitle="Esame superato!"
                 failureTitle="Verifica fallita"
+                diagnostics={diagnostics}
+                onSelectLine={goToLine}
               />
             ) : (
               !timeUp && (

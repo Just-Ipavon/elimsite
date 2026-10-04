@@ -1,9 +1,11 @@
-import { CheckCircle, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 
 /**
- * Mostra l'esito di `verifySolution` con punteggio e funzioni mancanti.
+ * Mostra l'esito di `verifySolution` con punteggio e funzioni mancanti e,
+ * se presenti, gli errori trovati da `diagnoseCode`: cliccandone uno
+ * `onSelectLine` porta l'editor su quella riga.
  */
-const VerificationResult = ({ result, successTitle, failureTitle }) => {
+const VerificationResult = ({ result, successTitle, failureTitle, diagnostics = [], onSelectLine }) => {
   const { success, score, missing, empty } = result;
   const tone = success ? 'green' : 'red';
   const Icon = success ? CheckCircle : XCircle;
@@ -34,6 +36,30 @@ const VerificationResult = ({ result, successTitle, failureTitle }) => {
                 {name}()
               </code>
             ))}
+          </div>
+        )}
+        {diagnostics.length > 0 && (
+          <div className="mt-3">
+            <h4 className="text-xs font-bold text-dracula-fg flex items-center gap-1 mb-1">
+              <AlertTriangle size={12} className="text-dracula-orange" aria-hidden="true" />
+              Da controllare ({diagnostics.length}) · sottolineati nell'editor
+            </h4>
+            <ul className="max-h-48 overflow-y-auto space-y-1 pr-1">
+              {diagnostics.map((d) => (
+                <li key={`${d.line}:${d.startColumn}:${d.message}`}>
+                  <button
+                    type="button"
+                    onClick={() => onSelectLine?.(d.line, d.startColumn)}
+                    className="w-full text-left text-xs rounded px-2 py-1 bg-dracula-bg/60 hover:bg-dracula-bg flex gap-2"
+                  >
+                    <span className={`font-mono shrink-0 ${d.severity === 'error' ? 'text-dracula-red' : 'text-dracula-yellow'}`}>
+                      riga {d.line}
+                    </span>
+                    <span className="text-dracula-fg/90 break-words min-w-0">{d.message}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
         {!empty && (

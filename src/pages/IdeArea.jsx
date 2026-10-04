@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Editor from '@monaco-editor/react';
 import { Eye, EyeOff, Play, RotateCcw } from 'lucide-react';
 import { algorithms } from '../data/algorithms';
 import { DRACULA_THEME, baseEditorOptions, defineDraculaTheme } from '../lib/monacoTheme';
 import { verifySolution } from '../lib/verify';
+import { applyDiagnostics, diagnoseCode } from '../lib/diagnostics';
 import VerificationResult from '../components/VerificationResult';
 
 const IdeArea = () => {
@@ -11,20 +12,41 @@ const IdeArea = () => {
   const [code, setCode] = useState(algorithms[0].cppSkeleton);
   const [verificationResult, setVerificationResult] = useState(null);
   const [showReference, setShowReference] = useState(true);
+  const [diagnostics, setDiagnostics] = useState([]);
+  const editorRef = useRef(null);
+  const monacoRef = useRef(null);
+
+  const setProblems = (list) => {
+    setDiagnostics(list);
+    applyDiagnostics(monacoRef.current, editorRef.current, list);
+  };
+
+  const goToLine = (line, column = 1) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.revealLineInCenter(line);
+    editor.setPosition({ lineNumber: line, column });
+    editor.focus();
+  };
 
   const handleAlgoChange = (e) => {
     const algo = algorithms.find((a) => a.id === e.target.value);
     setSelectedAlgo(algo);
     setCode(algo.cppSkeleton);
     setVerificationResult(null);
+    setProblems([]);
   };
 
   const resetCode = () => {
     setCode(selectedAlgo.cppSkeleton);
     setVerificationResult(null);
+    setProblems([]);
   };
 
-  const verifyCode = () => setVerificationResult(verifySolution(code, selectedAlgo.codeReference));
+  const verifyCode = () => {
+    setVerificationResult(verifySolution(code, selectedAlgo.codeReference));
+    setProblems(diagnoseCode(code, selectedAlgo.codeReference, { revealReference: true }));
+  };
 
   return (
     <div className="lg:h-[calc(100vh-4rem)] flex flex-col p-4 md:p-6">
@@ -82,6 +104,10 @@ const IdeArea = () => {
             value={code}
             onChange={(value) => setCode(value ?? '')}
             beforeMount={defineDraculaTheme}
+            onMount={(editor, monaco) => {
+              editorRef.current = editor;
+              monacoRef.current = monaco;
+            }}
             theme={DRACULA_THEME}
             options={{ ...baseEditorOptions, padding: { top: 16 } }}
           />
@@ -96,6 +122,8 @@ const IdeArea = () => {
                 result={verificationResult}
                 successTitle="Verifica superata"
                 failureTitle="Verifica non superata"
+                diagnostics={diagnostics}
+                onSelectLine={goToLine}
               />
             ) : (
               <p className="text-dracula-comment text-sm">
