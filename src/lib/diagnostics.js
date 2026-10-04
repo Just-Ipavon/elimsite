@@ -1,4 +1,4 @@
-import { algorithmCore, alignReference, editDistance, similarity } from './verify.js';
+import { algorithmCore, alignReference, canonicalLine, editDistance, similarity } from './verify.js';
 
 // Analisi "statica" del codice dello studente: il C++ non viene compilato,
 // quindi gli errori si cercano confrontandolo con il riferimento.
@@ -24,10 +24,6 @@ const blankComments = (code) =>
   code
     .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
     .replace(/\/\/.*$/gm, (m) => ' '.repeat(m.length));
-
-// Forma "canonica" di una riga: niente spazi, niente `}` iniziale o `{` finale
-// (così `}else{` e `} else {` o un if con o senza graffa si equivalgono).
-const canonical = (line) => line.replace(/\s+/g, '').replace(/^\}+/, '').replace(/\{+$/, '');
 
 const position = (code, index) => {
   const before = code.slice(0, index);
@@ -139,7 +135,7 @@ const nonSpaceColumns = (line) => [...line].flatMap((ch, i) => (/\s/.test(ch) ? 
 const checkLines = (clean, reference, revealReference) => {
   const refLines = blankComments(algorithmCore(reference))
     .split('\n')
-    .map((raw) => ({ raw: raw.trim(), norm: canonical(raw) }))
+    .map((raw) => ({ raw: raw.trim(), norm: canonicalLine(raw) }))
     .filter(({ norm }) => norm.length > 2);
   const refSet = new Set(refLines.map(({ norm }) => norm));
 
@@ -148,7 +144,7 @@ const checkLines = (clean, reference, revealReference) => {
   const diagnostics = [];
 
   scope.split('\n').forEach((raw, idx) => {
-    const norm = canonical(raw);
+    const norm = canonicalLine(raw);
     if (norm.length <= 2 || refSet.has(norm) || /^#|^usingnamespace/.test(norm)) return;
 
     let best = null;
@@ -194,6 +190,49 @@ const checkLines = (clean, reference, revealReference) => {
   return diagnostics;
 };
 
+// Controlli sul main: deve leggere l'immagine come nel riferimento (es. in
+// scala di grigi) e chiamare la funzione principale scritta dallo studente.
+const checkMain = (clean, reference) => {
+  const mainIndex = clean.search(/\bint\s+main\s*\(/);
+  const refMainIndex = reference.search(/\bint\s+main\s*\(/);
+  if (mainIndex === -1 || refMainIndex === -1) return [];
+  const main = clean.slice(mainIndex);
+  const refMain = reference.slice(refMainIndex);
+  const lineOf = (offset) => clean.slice(0, mainIndex + offset).split('\n').length;
+  const diagnostics = [];
+
+  const imread = main.match(/imread\s*\(([^;]*)\)\s*;/);
+  if (imread && /IMREAD_GRAYSCALE/.test(refMain) && !/IMREAD_GRAYSCALE|IMREAD_REDUCED_GRAYSCALE|,\s*0\s*\)?\s*$/.test(imread[1])) {
+    const line = lineOf(imread.index);
+    const raw = clean.split('\n')[line - 1];
+    const col = raw.indexOf('imread') + 1;
+    diagnostics.push({
+      severity: 'error',
+      line,
+      startColumn: col,
+      endColumn: col + 6,
+      message: "L'algoritmo lavora su un solo canale: leggi l'immagine in scala di grigi con `imread(argv[1], IMREAD_GRAYSCALE)`.",
+    });
+  }
+
+  // Funzioni del riferimento chiamate nel main (es. myCanny), già rinominate
+  // con i nomi dello studente da alignReference.
+  const ownFunctions = new Set(
+    [...algorithmCore(reference).matchAll(/^[A-Za-z_][\w<>:,*& ]*[\s*&]([A-Za-z_]\w*)\s*\([^)]*\)\s*\{/gm)].map((m) => m[1]),
+  );
+  for (const [, name] of refMain.matchAll(/\b([A-Za-z_]\w*)\s*\(/g)) {
+    if (!ownFunctions.has(name) || new RegExp(`\\b${name}\\s*\\(`).test(main)) continue;
+    diagnostics.push({
+      severity: 'warning',
+      line: lineOf(0),
+      startColumn: 1,
+      endColumn: 9,
+      message: `Il main non chiama mai \`${name}\`: così la tua implementazione non viene eseguita.`,
+    });
+  }
+  return diagnostics;
+};
+
 /**
  * Restituisce gli errori e gli avvisi trovati nel codice dello studente,
  * ordinati per riga: { severity: 'error'|'warning', line, startColumn,
@@ -204,7 +243,7 @@ export const diagnoseCode = (code, originalReference, { revealReference = true }
   // Le funzioni dello studente con un nome diverso valgono come quelle del riferimento.
   const reference = alignReference(code, originalReference);
   const clean = blankComments(code);
-  const errors = [...checkBrackets(clean), ...checkIdentifiers(clean, reference)];
+  const errors = [...checkBrackets(clean), ...checkIdentifiers(clean, reference), ...checkMain(clean, reference)];
   const errorLines = new Set(errors.map((d) => d.line));
   // Una riga con un errore vero non riceve anche l'avviso generico.
   const warnings = checkLines(clean, reference, revealReference).filter((d) => !errorLines.has(d.line));

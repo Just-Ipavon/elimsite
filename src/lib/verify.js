@@ -125,32 +125,40 @@ const calledFunctions = (code) => {
   return names;
 };
 
+// Forma "canonica" di una riga: niente spazi, niente `}` iniziale o `{` finale,
+// così `}else{` e `} else {`, o un if con o senza graffa, si equivalgono.
+export const canonicalLine = (line) => line.replace(/\s+/g, '').replace(/^\}+/, '').replace(/\{+$/, '');
+
 const meaningfulLines = (code) =>
   stripComments(code)
     .split('\n')
-    .map((line) => line.replace(/\s+/g, ''))
-    .filter((line) => line.length > 2);
+    .map((line) => ({ raw: line.trim(), norm: canonicalLine(line) }))
+    .filter(({ norm }) => norm.length > 2);
 
 /**
  * Confronta il codice dello studente con l'implementazione di riferimento.
- * Restituisce { success, score, missing } dove `score` è la percentuale di
- * righe significative del riferimento presenti nel codice e `missing` sono
- * le funzioni chiamate dal riferimento che non compaiono nel codice.
+ * Restituisce { success, score, missing, missingLines }: `score` è la
+ * percentuale di righe significative del riferimento presenti nel codice,
+ * `missing` le funzioni chiamate dal riferimento che non compaiono nel codice
+ * e `missingLines` le righe del riferimento che non sono state trovate.
  */
 export const verifySolution = (code, reference) => {
   const core = algorithmCore(alignReference(code, reference));
-  const userNorm = normalize(code);
-  const coreNorm = normalize(core);
-
-  if (!userNorm) return { success: false, score: 0, missing: [], empty: true };
+  if (!normalize(code)) return { success: false, score: 0, missing: [], missingLines: [], empty: true };
 
   const userCalls = calledFunctions(code);
   const missing = [...calledFunctions(core)].filter((name) => !userCalls.has(name));
 
-  const userLines = new Set(meaningfulLines(code));
+  const userLines = new Set(meaningfulLines(code).map(({ norm }) => norm));
   const refLines = meaningfulLines(core);
-  const matched = refLines.filter((line) => userLines.has(line)).length;
+  const missingLines = [...new Set(refLines.filter(({ norm }) => !userLines.has(norm)).map(({ raw }) => raw))];
+  const matched = refLines.filter(({ norm }) => userLines.has(norm)).length;
   const score = refLines.length ? Math.round((matched / refLines.length) * 100) : 0;
 
-  return { success: coreNorm.length > 0 && userNorm.includes(coreNorm), score, missing };
+  return {
+    success: refLines.length > 0 && matched === refLines.length && missing.length === 0,
+    score,
+    missing,
+    missingLines,
+  };
 };

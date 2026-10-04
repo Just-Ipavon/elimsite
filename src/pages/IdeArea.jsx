@@ -124,6 +124,7 @@ const IdeArea = () => {
                 failureTitle="Verifica non superata"
                 diagnostics={diagnostics}
                 onSelectLine={goToLine}
+                showMissingLines
               />
             ) : (
               <p className="text-dracula-comment text-sm">

@@ -5,14 +5,25 @@ import { AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
  * se presenti, gli errori trovati da `diagnoseCode`: cliccandone uno
  * `onSelectLine` porta l'editor su quella riga.
  */
-const VerificationResult = ({ result, successTitle, failureTitle, diagnostics = [], onSelectLine }) => {
-  const { success, score, missing, empty } = result;
+const VerificationResult = ({
+  result,
+  successTitle,
+  failureTitle,
+  diagnostics = [],
+  onSelectLine,
+  showMissingLines = false,
+}) => {
+  const { score, missing, empty, missingLines = [] } = result;
+  const hasErrors = diagnostics.some((d) => d.severity === 'error');
+  // Con un errore vero (es. nome sbagliato) il codice non compilerebbe: niente verde.
+  const success = result.success && !hasErrors;
   const tone = success ? 'green' : 'red';
   const Icon = success ? CheckCircle : XCircle;
 
   let message;
   if (empty) message = "L'editor è vuoto: scrivi la tua implementazione prima di verificarla.";
   else if (success) message = "Il codice contiene l'implementazione di riferimento completa.";
+  else if (result.success) message = "La parte algoritmica corrisponde al riferimento, ma ci sono errori da correggere:";
   else if (missing.length > 0) message = 'Mancano alcune chiamate chiave presenti nella soluzione di riferimento:';
   else message = 'Hai usato le funzioni giuste, ma la struttura non corrisponde ancora alla soluzione: ricontrolla i passaggi.';
 
@@ -36,6 +47,26 @@ const VerificationResult = ({ result, successTitle, failureTitle, diagnostics = 
                 {name}()
               </code>
             ))}
+          </div>
+        )}
+        {!success && missingLines.length > 0 && (
+          <div className="mt-3">
+            <h4 className="text-xs font-bold text-dracula-fg mb-1">
+              Righe del riferimento che non trovo nel tuo codice ({missingLines.length})
+            </h4>
+            {showMissingLines ? (
+              <ul className="max-h-40 overflow-y-auto space-y-1 pr-1">
+                {missingLines.map((line) => (
+                  <li key={line}>
+                    <code className="block text-xs bg-dracula-bg/60 rounded px-2 py-1 text-dracula-cyan whitespace-pre-wrap break-words">
+                      {line}
+                    </code>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-dracula-comment">Controlla i passaggi dell'algoritmo: qualcosa manca o è scritto in modo diverso.</p>
+            )}
           </div>
         )}
         {diagnostics.length > 0 && (
