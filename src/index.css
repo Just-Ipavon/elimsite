@@ -2,38 +2,144 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Token di colore (triplette RGB, così Tailwind può applicare l'opacità).
+ * Un solo colore d'accento; verde, ambra e rosso solo per gli esiti.
+ */
 @layer base {
+  :root {
+    color-scheme: light;
+    --bg: 247 246 243;
+    --surface: 255 255 255;
+    --sunken: 240 238 233;
+    --line: 228 225 218;
+    --line-strong: 206 202 192;
+    --ink: 28 27 25;
+    --ink-2: 87 84 77;
+    --ink-3: 128 124 115;
+    --accent: 194 65 12;
+    --accent-ink: 255 255 255;
+    --ok: 21 128 61;
+    --warn: 161 98 7;
+    --err: 185 28 28;
+  }
+
+  [data-theme='dark'] {
+    color-scheme: dark;
+    --bg: 20 20 19;
+    --surface: 27 27 25;
+    --sunken: 17 17 16;
+    --line: 46 45 42;
+    --line-strong: 64 63 58;
+    --ink: 236 235 230;
+    --ink-2: 168 165 156;
+    --ink-3: 125 122 114;
+    --accent: 240 122 60;
+    --accent-ink: 20 20 19;
+    --ok: 74 222 128;
+    --warn: 251 191 36;
+    --err: 248 113 113;
+  }
+
+  html {
+    @apply bg-bg;
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
-    @apply bg-dracula-bg text-dracula-fg font-sans antialiased;
+    @apply bg-bg text-ink font-sans antialiased;
+    font-feature-settings: 'ss02';
+  }
+
+  ::selection {
+    @apply bg-accent/20;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent/60 ring-offset-2 ring-offset-bg;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 
-/* Custom Scrollbar for Dracula theme */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  @apply bg-dracula-bg;
-}
-::-webkit-scrollbar-thumb {
-  @apply bg-dracula-current rounded;
-}
-::-webkit-scrollbar-thumb:hover {
-  @apply bg-dracula-comment;
+@layer components {
+  /* Etichetta piccola sopra titoli e sezioni */
+  .eyebrow {
+    @apply font-mono text-2xs uppercase tracking-[0.12em] text-ink-3;
+  }
+
+  .panel {
+    @apply bg-surface border border-line rounded-lg;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 h-9 px-3.5 rounded-md text-sm font-medium whitespace-nowrap
+      transition-colors duration-150 select-none
+      disabled:opacity-45 disabled:cursor-not-allowed;
+  }
+  .btn-sm {
+    @apply h-8 px-2.5 text-[13px];
+  }
+  .btn-primary {
+    @apply bg-accent text-accent-ink hover:bg-accent/90 active:bg-accent/80;
+  }
+  .btn-secondary {
+    @apply bg-surface text-ink border border-line-strong hover:bg-sunken active:bg-line/60;
+  }
+  .btn-ghost {
+    @apply text-ink-2 hover:text-ink hover:bg-sunken;
+  }
+
+  .field {
+    @apply h-9 w-full rounded-md border border-line-strong bg-surface px-3 text-sm text-ink
+      transition-colors hover:border-ink-3 focus:border-accent focus:outline-none focus-visible:ring-0;
+  }
+
+  .kbd {
+    @apply inline-flex items-center rounded border border-line-strong bg-sunken px-1.5 font-mono text-2xs text-ink-2;
+  }
+
+  /* Cursori: traccia sottile, pomello pieno nell'accento */
+  .range {
+    @apply w-full h-5 bg-transparent cursor-pointer appearance-none;
+  }
+  .range::-webkit-slider-runnable-track {
+    @apply h-1 rounded-full bg-line-strong;
+  }
+  .range::-moz-range-track {
+    @apply h-1 rounded-full bg-line-strong;
+  }
+  .range::-webkit-slider-thumb {
+    @apply appearance-none -mt-1.5 h-4 w-4 rounded-full bg-accent border-2 border-surface shadow;
+  }
+  .range::-moz-range-thumb {
+    @apply h-3.5 w-3.5 rounded-full bg-accent border-2 border-surface;
+  }
 }
 
-/* Glassmorphism utility */
-.glass {
-  @apply bg-dracula-current bg-opacity-40 backdrop-blur-md border border-dracula-comment border-opacity-30;
+/* Barre di scorrimento discrete */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--line-strong)) transparent;
 }
 
-/* Monaco Decoration for Explanations */
+/* Zone del codice con una spiegazione (decorazioni Monaco) */
 .explanation-highlight {
-  background-color: rgba(189, 147, 249, 0.15) !important;
-  border-left: 3px solid #ff79c6 !important;
+  background-color: rgb(var(--accent) / 0.07) !important;
+  border-left: 2px solid rgb(var(--accent) / 0.55) !important;
   cursor: pointer;
 }
 .explanation-highlight:hover {
-  background-color: rgba(189, 147, 249, 0.25) !important;
+  background-color: rgb(var(--accent) / 0.14) !important;
+}
+.explanation-active {
+  background-color: rgb(var(--accent) / 0.16) !important;
+  border-left: 2px solid rgb(var(--accent)) !important;
 }

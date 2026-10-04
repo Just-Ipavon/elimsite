@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import Editor from '@monaco-editor/react';
-import { Play, XCircle, Clock, Image as ImageIcon, Shuffle } from 'lucide-react';
+import { Clock, Play, Send, Shuffle } from 'lucide-react';
 import { algorithms } from '../data/algorithms';
 import lenaSrc from '../assets/lena.png';
-import { DRACULA_THEME, baseEditorOptions, defineDraculaTheme } from '../lib/monacoTheme';
 import { clearCanvas, runVisualAlgorithm, useOpenCv } from '../lib/opencv';
 import { verifySolution } from '../lib/verify';
 import { applyDiagnostics, diagnoseCode } from '../lib/diagnostics';
 import VerificationResult from '../components/VerificationResult';
+import Callout from '../components/ui/Callout';
+import Panel from '../components/ui/Panel';
+import { EditorPanel, ResultEmpty, SidePane, WorkspaceShell } from '../components/workspace/Workspace';
 
 const EXAM_DURATION_S = 90 * 60;
 const WARNING_THRESHOLD_S = 5 * 60;
@@ -31,6 +32,7 @@ const ExamArea = () => {
   const [deadline, setDeadline] = useState(() => Date.now() + EXAM_DURATION_S * 1000);
   const [timeLeft, setTimeLeft] = useState(EXAM_DURATION_S);
   const [processing, setProcessing] = useState(false);
+  const [hasOutput, setHasOutput] = useState(false);
   const cvStatus = useOpenCv();
 
   const imgRef = useRef(null);
@@ -65,8 +67,12 @@ const ExamArea = () => {
   }, [deadline]);
 
   const timeUp = timeLeft === 0;
+  const lowTime = !timeUp && timeLeft < WARNING_THRESHOLD_S;
 
   const newExam = () => {
+    // Evita di buttare via per sbaglio una soluzione in corso
+    const dirty = !timeUp && code !== selectedAlgo.cppSkeleton;
+    if (dirty && !window.confirm('Iniziare un nuovo esame? Il codice scritto finora andrà perso.')) return;
     const algo = pickRandomAlgo(selectedAlgo.id);
     setSelectedAlgo(algo);
     setCode(algo.cppSkeleton);
@@ -75,6 +81,7 @@ const ExamArea = () => {
     setDeadline(Date.now() + EXAM_DURATION_S * 1000);
     setTimeLeft(EXAM_DURATION_S);
     clearCanvas(canvasRef.current);
+    setHasOutput(false);
   };
 
   // In esame gli errori vengono evidenziati senza mostrare le righe del riferimento.
@@ -83,12 +90,17 @@ const ExamArea = () => {
     setProblems(diagnoseCode(code, selectedAlgo.codeReference, { revealReference: false }));
   };
 
+  const submitFromEditor = () => {
+    if (!timeUp) verifyCode();
+  };
+
   const runVisualizer = () => {
     if (cvStatus !== 'ready' || !imgRef.current || !canvasRef.current) return;
     setProcessing(true);
     setTimeout(() => {
       try {
         runVisualAlgorithm(selectedAlgo.id, imgRef.current, canvasRef.current);
+        setHasOutput(true);
       } catch (err) {
         console.error('OpenCV execution error:', err);
       } finally {
@@ -97,145 +109,138 @@ const ExamArea = () => {
     }, 50);
   };
 
+  const timerTone = timeUp
+    ? 'border-err/40 bg-err/5 text-err'
+    : lowTime
+      ? 'border-warn/40 bg-warn/5 text-warn'
+      : 'border-line-strong bg-surface text-ink';
+
+  const runLabel = processing ? 'Elaborazione…' : cvStatus === 'loading' ? 'Caricamento OpenCV…' : 'Mostra risultato atteso';
+
+  const toolbar = (
+    <>
+      <div className="mr-auto flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h1 className="font-display text-xl tracking-tight text-ink">Esame</h1>
+        <p className="min-w-0 text-sm text-ink-2">
+          Traccia: <span className="font-medium text-ink">{selectedAlgo.name}</span>
+        </p>
+      </div>
+      <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+        <span
+          role="timer"
+          aria-label={`Tempo rimanente ${formatTime(timeLeft)}`}
+          className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 font-mono text-sm tabular-nums ${timerTone}`}
+        >
+          <Clock size={14} aria-hidden="true" />
+          {formatTime(timeLeft)}
+        </span>
+        <button type="button" onClick={newExam} className="btn btn-secondary ml-auto sm:ml-0" title="Nuovo esame">
+          <Shuffle size={15} aria-hidden="true" />
+          <span className="max-[400px]:sr-only">Nuovo esame</span>
+        </button>
+        <button type="button" onClick={verifyCode} disabled={timeUp} className="btn btn-primary">
+          <Send size={15} aria-hidden="true" />
+          Consegna
+        </button>
+      </div>
+    </>
+  );
+
   return (
-    <div className="lg:h-[calc(100vh-4rem)] flex flex-col p-4 md:p-6">
-      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-4">
-        <div>
-          <h1 className="text-2xl font-bold font-mono text-dracula-cyan flex flex-wrap items-center gap-3">
-            Esame (senza soluzioni)
-            <span
-              role="timer"
-              aria-label="Tempo rimanente"
-              className={`text-lg bg-dracula-current px-3 py-1 rounded flex items-center gap-2 ${
-                timeLeft < WARNING_THRESHOLD_S ? 'text-dracula-red animate-pulse' : 'text-dracula-fg'
-              }`}
-            >
-              <Clock size={16} aria-hidden="true" /> {formatTime(timeLeft)}
+    <WorkspaceShell toolbar={toolbar}>
+      <EditorPanel
+        value={code}
+        onChange={(value) => setCode(value ?? '')}
+        onSubmit={submitFromEditor}
+        onMount={(editor, monaco) => {
+          editorRef.current = editor;
+          monacoRef.current = monaco;
+        }}
+        options={{ readOnly: timeUp }}
+        status={
+          timeUp ? (
+            <span className="shrink-0 rounded border border-err/30 bg-err/5 px-1.5 font-mono text-2xs text-err">
+              sola lettura
             </span>
-          </h1>
-          <p className="text-lg mt-2 text-dracula-fg border-l-4 border-dracula-cyan pl-3">
-            Algoritmo estratto: <span className="font-bold text-dracula-pink">{selectedAlgo.name}</span>
-          </p>
-        </div>
+          ) : (
+            lowTime && (
+              <span className="shrink-0 rounded border border-warn/30 bg-warn/5 px-1.5 font-mono text-2xs text-warn">
+                ultimi minuti
+              </span>
+            )
+          )
+        }
+      />
 
-        <div className="flex flex-wrap gap-3 items-center">
-          <button
-            type="button"
-            onClick={newExam}
-            className="flex items-center space-x-2 border border-dracula-comment text-dracula-fg px-4 py-2 rounded hover:border-dracula-cyan hover:text-dracula-cyan transition-colors"
-          >
-            <Shuffle size={16} aria-hidden="true" />
-            <span>Nuovo esame</span>
-          </button>
-          <button
-            type="button"
-            onClick={verifyCode}
-            disabled={timeUp}
-            className="flex items-center space-x-2 bg-dracula-cyan text-dracula-bg px-6 py-2 rounded font-bold hover:bg-opacity-80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Play size={16} aria-hidden="true" />
-            <span>Consegna</span>
-          </button>
-        </div>
-      </div>
+      <SidePane>
+        <Panel title="Esito" className="min-h-[14rem] flex-1 lg:min-h-[10rem]" bodyClassName="flex-1 overflow-y-auto p-4">
+          {timeUp && !verificationResult && (
+            <Callout tone="err" role="alert" title="Tempo scaduto">
+              Non hai consegnato in tempo. Avvia un nuovo esame per riprovare.
+            </Callout>
+          )}
 
-      <div className="flex-grow flex flex-col lg:flex-row gap-4 min-h-0">
-        {/* Colonna sinistra: editor */}
-        <div className="w-full lg:w-1/2 h-[60vh] lg:h-full flex flex-col border rounded-lg overflow-hidden border-dracula-cyan relative">
-          <div className="absolute top-2 right-4 z-10 bg-dracula-current px-3 py-1 rounded text-xs text-dracula-comment border border-dracula-comment pointer-events-none">
-            {timeUp ? 'Tempo scaduto: editor in sola lettura' : 'Scrivi qui il tuo codice C++'}
-          </div>
-          <Editor
-            height="100%"
-            language="cpp"
-            value={code}
-            onChange={(value) => setCode(value ?? '')}
-            beforeMount={defineDraculaTheme}
-            onMount={(editor, monaco) => {
-              editorRef.current = editor;
-              monacoRef.current = monaco;
-            }}
-            theme={DRACULA_THEME}
-            options={{ ...baseEditorOptions, fontSize: 15, padding: { top: 40 }, readOnly: timeUp }}
-          />
-        </div>
+          {verificationResult ? (
+            <VerificationResult
+              result={verificationResult}
+              successTitle="Esame superato"
+              failureTitle="Verifica non superata"
+              diagnostics={diagnostics}
+              onSelectLine={goToLine}
+            />
+          ) : (
+            !timeUp && (
+              <ResultEmpty action="Consegna">
+                Scrivi la tua implementazione dell'algoritmo estratto, senza codice di riferimento. Gli errori
+                verranno evidenziati nell'editor.
+              </ResultEmpty>
+            )
+          )}
+        </Panel>
 
-        {/* Colonna destra: esito e visualizzatore */}
-        <div className="w-full lg:w-1/2 flex flex-col lg:h-full gap-4 lg:overflow-y-auto lg:pr-2">
-          <div className="glass rounded-lg p-4 flex flex-col shrink-0">
-            <h2 className="text-lg font-bold text-dracula-cyan mb-2 border-b border-dracula-comment pb-2">
-              Esito verifica
-            </h2>
-
-            {timeUp && !verificationResult && (
-              <div role="alert" className="mt-4 p-4 rounded-md border flex items-start space-x-3 bg-dracula-red/10 border-dracula-red">
-                <XCircle className="mt-1 shrink-0 text-dracula-red" size={20} aria-hidden="true" />
-                <div>
-                  <h3 className="font-bold text-dracula-red">Tempo scaduto</h3>
-                  <p className="text-sm mt-1">Non hai consegnato in tempo. Avvia un nuovo esame per riprovare.</p>
-                </div>
+        <Panel
+          title="Obiettivo visivo"
+          className="shrink-0"
+          actions={
+            <button
+              type="button"
+              onClick={runVisualizer}
+              disabled={cvStatus !== 'ready' || processing}
+              className="btn btn-secondary btn-sm"
+            >
+              <Play size={13} aria-hidden="true" />
+              <span className="hidden sm:inline">{runLabel}</span>
+              <span className="sm:hidden">{processing || cvStatus === 'loading' ? '…' : 'Esegui'}</span>
+            </button>
+          }
+        >
+          <div className="grid max-w-[22rem] grid-cols-2 gap-3">
+            <figure className="min-w-0">
+              <figcaption className="eyebrow mb-1.5">Sorgente</figcaption>
+              <div className="overflow-hidden rounded-md border border-line bg-sunken">
+                <img ref={imgRef} src={lenaSrc} alt="Immagine sorgente: Lena" className="block aspect-square w-full object-cover" />
               </div>
-            )}
-
-            {verificationResult ? (
-              <VerificationResult
-                result={verificationResult}
-                successTitle="Esame superato!"
-                failureTitle="Verifica fallita"
-                diagnostics={diagnostics}
-                onSelectLine={goToLine}
-              />
-            ) : (
-              !timeUp && (
-                <p className="text-dracula-comment text-sm mt-2">
-                  Scrivi la tua implementazione dell'algoritmo estratto e premi Consegna.
-                </p>
-              )
-            )}
+            </figure>
+            <figure className="min-w-0">
+              <figcaption className="eyebrow mb-1.5">Output atteso</figcaption>
+              <div className="relative flex aspect-square items-center justify-center overflow-hidden rounded-md border border-line bg-sunken">
+                {!hasOutput && (
+                  <span className="absolute inset-0 flex items-center justify-center px-2 text-center font-mono text-2xs text-ink-3">
+                    non ancora eseguito
+                  </span>
+                )}
+                <canvas ref={canvasRef} className="relative block h-auto w-full" />
+              </div>
+            </figure>
           </div>
-
-          <div className="glass rounded-lg p-4 flex flex-col shrink-0">
-            <div className="flex flex-wrap items-center gap-2 border-b border-dracula-comment pb-2 mb-4">
-              <h2 className="text-lg font-bold text-dracula-fg flex items-center gap-2">
-                <ImageIcon className="text-dracula-green" size={20} aria-hidden="true" /> Obiettivo visivo
-              </h2>
-              <button
-                type="button"
-                onClick={runVisualizer}
-                disabled={cvStatus !== 'ready' || processing}
-                className="ml-auto text-xs flex items-center space-x-2 bg-dracula-green text-dracula-bg px-3 py-1 rounded hover:bg-opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Play size={12} fill="currentColor" aria-hidden="true" />
-                <span>
-                  {processing ? 'Elaborazione...' : cvStatus === 'loading' ? 'Caricamento OpenCV...' : 'Mostra risultato atteso'}
-                </span>
-              </button>
-            </div>
-
-            <div className="flex flex-row justify-center items-start gap-4">
-              <figure className="flex flex-col items-center w-full max-w-[180px]">
-                <figcaption className="text-xs text-dracula-comment mb-1">Sorgente (Lena)</figcaption>
-                <div className="bg-dracula-bg border border-dracula-current rounded w-full">
-                  <img ref={imgRef} src={lenaSrc} alt="Immagine sorgente: Lena" className="w-full h-auto rounded" />
-                </div>
-              </figure>
-
-              <figure className="flex flex-col items-center w-full max-w-[180px]">
-                <figcaption className="text-xs text-dracula-comment mb-1">Output atteso</figcaption>
-                <div className="bg-dracula-bg border border-dracula-purple rounded w-full aspect-square flex items-center justify-center">
-                  <canvas ref={canvasRef} className="w-full h-auto rounded max-w-full" />
-                </div>
-              </figure>
-            </div>
-            <p className="text-xs text-dracula-comment mt-4 text-center">
-              {cvStatus === 'error'
-                ? 'Impossibile caricare OpenCV.js: controlla la connessione e ricarica la pagina.'
-                : "Il visualizzatore mostra il risultato atteso per darti un'indicazione sull'algoritmo da implementare."}
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
+          <p className={`mt-3 text-xs leading-relaxed ${cvStatus === 'error' ? 'text-err' : 'text-ink-3'}`}>
+            {cvStatus === 'error'
+              ? 'Impossibile caricare OpenCV.js: controlla la connessione e ricarica la pagina.'
+              : "Il risultato atteso su Lena ti dà un'indicazione sull'algoritmo da implementare."}
+          </p>
+        </Panel>
+      </SidePane>
+    </WorkspaceShell>
   );
 };
 

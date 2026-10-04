@@ -27,7 +27,9 @@ quindi funziona su GitHub Pages senza configurazioni aggiuntive.
 | `src/data/algorithms.js` | Algoritmi: descrizione, codice di riferimento, scheletro e spiegazioni |
 | `src/lib/opencv.js` | Caricamento di OpenCV.js ed equivalenti visivi degli algoritmi |
 | `src/lib/verify.js` | Confronto tra il codice dello studente e il riferimento |
-| `src/lib/monacoTheme.js` | Tema Dracula e opzioni condivise per l'editor |
+| `src/lib/monacoTheme.js` | Temi chiaro/scuro e opzioni condivise per l'editor |
+| `src/components/ui/` | Componenti condivisi dell'interfaccia (pannelli, editor, avvisi, scelta dell'algoritmo) |
+| `src/theme/` | Tema chiaro/scuro (segue il sistema, scelta salvata nel browser) |
 | `src/pages/` | Pagine Home, Studio, IDE ed Esame |
 
 ## Note
