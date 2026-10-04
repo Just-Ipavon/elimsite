@@ -71,15 +71,16 @@ export const algorithms = [
         note: "Versione semplificata: un solo passaggio, quindi promuove solo i deboli che toccano direttamente un forte e non segue le catene di deboli.",
       },
       {
-        startMatch: "GaussianBlur(src, gauss, Size(5, 5), 0);",
-        endMatch: "Sobel(gauss, dy, CV_32F, 0, 1, 3);",
+        startMatch: "cv::GaussianBlur(src, gauss, Size(5, 5), 0);",
+        endMatch: "cv::Sobel(gauss, dy, CV_32F, 0, 1, 3);",
         title: "Pipeline · Blur e Sobel",
         text: "Le derivate amplificano il rumore, quindi prima si sfoca con un filtro gaussiano 5×5 (sigma 0 = calcolato da OpenCV). Poi Sobel 3×3: dx = derivata in x (1, 0), dy = derivata in y (0, 1).",
         points: ["CV_32F perché le derivate possono essere negative: su 8 bit verrebbero tagliate a 0."],
+        note: "Perché cv:: davanti a ogni funzione? Con using namespace std e using namespace cv insieme alcuni nomi possono essere ambigui (std e cv hanno funzioni omonime, es. pow, sqrt, min, max) oppure essere nascosti da una variabile locale con lo stesso nome (es. una Mat chiamata phase). Scrivendo sempre cv:: il compilatore sa esattamente quale funzione usare: regola semplice, funziona sempre.",
       },
       {
-        startMatch: "magnitude(dx, dy, mag);",
-        endMatch: "phase(dx, dy, angle, true);",
+        startMatch: "cv::magnitude(dx, dy, mag);",
+        endMatch: "cv::phase(dx, dy, angle, true);",
         title: "Pipeline · Modulo e fase",
         text: "Per ogni pixel il gradiente è il vettore (dx, dy).",
         points: [
@@ -155,12 +156,12 @@ void hysteresis(const Mat &nms, Mat &dst, int lth, int hth) {
 // 3. Pipeline: blur -> Sobel -> modulo e fase -> NMS -> isteresi
 void myCanny(const Mat &src, Mat &dst, int lth, int hth) {
     Mat gauss, dx, dy, mag, angle, nms;
-    GaussianBlur(src, gauss, Size(5, 5), 0);
-    Sobel(gauss, dx, CV_32F, 1, 0, 3);
-    Sobel(gauss, dy, CV_32F, 0, 1, 3);
-    magnitude(dx, dy, mag);
-    normalize(mag, mag, 0, 255, NORM_MINMAX, CV_8U);
-    phase(dx, dy, angle, true);          // gradi in [0, 360)
+    cv::GaussianBlur(src, gauss, Size(5, 5), 0);
+    cv::Sobel(gauss, dx, CV_32F, 1, 0, 3);
+    cv::Sobel(gauss, dy, CV_32F, 0, 1, 3);
+    cv::magnitude(dx, dy, mag);
+    cv::normalize(mag, mag, 0, 255, NORM_MINMAX, CV_8U);
+    cv::phase(dx, dy, angle, true);      // gradi in [0, 360)
     nonMaxSuppression(mag, angle, nms);
     hysteresis(nms, dst, lth, hth);
 }
