@@ -75,28 +75,27 @@ const cannyFromGradients = (dxData, dyData, rows, cols, lowThresh, highThresh) =
   for (let r = 1; r < rows - 1; r += 1) {
     for (let c = 1; c < cols - 1; c += 1) {
       const i = r * cols + c;
-      let ang = phase[i];
-      if (ang > 180) ang -= 360;
+      const a = phase[i] >= 180 ? phase[i] - 180 : phase[i];
       let q;
       let p;
-      if ((ang >= -22.5 && ang <= 22.5) || ang <= -157.5 || ang >= 157.5) {
+      if (a < 22.5 || a >= 157.5) {
         q = mag[i - 1];
         p = mag[i + 1];
-      } else if ((ang > 22.5 && ang <= 67.5) || (ang >= -157.5 && ang < -112.5)) {
-        q = mag[i - cols + 1];
-        p = mag[i + cols - 1];
-      } else if ((ang > 67.5 && ang <= 112.5) || (ang >= -112.5 && ang < -67.5)) {
+      } else if (a < 67.5) {
+        q = mag[i - cols - 1];
+        p = mag[i + cols + 1];
+      } else if (a < 112.5) {
         q = mag[i - cols];
         p = mag[i + cols];
       } else {
-        q = mag[i - cols - 1];
-        p = mag[i + cols + 1];
+        q = mag[i - cols + 1];
+        p = mag[i + cols - 1];
       }
       if (mag[i] >= q && mag[i] >= p) nms[i] = mag[i];
     }
   }
 
-  // hysteresisThreshold
+  // hysteresis
   const out = new Uint8Array(n);
   for (let r = 1; r < rows - 1; r += 1) {
     for (let c = 1; c < cols - 1; c += 1) {

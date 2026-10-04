@@ -21,195 +21,157 @@ export const algorithms = [
     id: "canny",
     name: "Canny Edge Detector",
     description:
-      "Canny è il rilevatore di bordi «ottimo»: produce bordi sottili (spessi un pixel), ben localizzati e poco sensibili al rumore. L'implementazione è divisa in tre funzioni: myCanny orchestra la pipeline, nonMaxSuppression assottiglia i bordi e hysteresisThreshold decide quali tenere con una doppia soglia.",
+      "Canny trova bordi sottili (larghi un pixel) e poco sensibili al rumore. Per ricordarlo bastano 5 parole: blur, Sobel, modulo/fase, NMS, isteresi. Il codice è diviso in tre funzioni: myCanny esegue la pipeline, nonMaxSuppression assottiglia i bordi, hysteresis decide quali tenere con due soglie.",
     steps: [
-      "Smoothing gaussiano 5×5 per attenuare il rumore (le derivate lo amplificherebbero).",
-      "Gradienti con Sobel: dx (variazioni orizzontali) e dy (variazioni verticali) in float.",
-      "Modulo del gradiente normalizzato in [0, 255] e fase (direzione) in gradi.",
-      "Non-maximum suppression: ogni pixel sopravvive solo se è un massimo lungo la direzione del gradiente.",
-      "Isteresi: i pixel ≥ highThresh sono bordi forti, quelli in [lowThresh, highThresh) vengono tenuti solo se toccano un bordo forte.",
+      "Blur gaussiano 5×5 per togliere il rumore.",
+      "Sobel: derivate dx e dy (in float, perché possono essere negative).",
+      "Modulo (forza del bordo, normalizzato in 0–255) e fase (direzione, in gradi).",
+      "NMS: un pixel resta solo se è più forte dei due vicini lungo il gradiente.",
+      "Isteresi: ≥ alta → bordo; tra bassa e alta → bordo solo se tocca un bordo forte.",
     ],
     explanations: [
       {
-        startMatch: "void nonMaxSuppression(const Mat &mag, const Mat &phase, Mat &nms) {",
-        endMatch: "uchar q = 0, p = 0;",
-        title: "NMS · Preparazione",
-        text: "La non-maximum suppression riceve il modulo del gradiente (mag, 8 bit) e la fase (phase, float in gradi) e scrive il risultato in nms, inizializzata tutta a zero: un pixel diventa bordo solo se lo decidiamo esplicitamente.",
+        startMatch: "void nonMaxSuppression(const Mat &mag, const Mat &angle, Mat &nms) {",
+        endMatch: "if (a >= 180) a -= 180;",
+        title: "NMS · Angolo in [0°, 180°)",
+        text: "nms parte tutta nera: un pixel diventa bordo solo se lo decidiamo. I cicli partono da 1 e finiscono a rows-1 / cols-1, così i vicini (i±1, j±1) sono sempre dentro l'immagine.",
         points: [
-          "I cicli partono da 1 e finiscono a rows-1 / cols-1: così i vicini (r±1, c±1) sono sempre dentro l'immagine. La cornice esterna resta nera.",
-          "cv::phase restituisce angoli in [0°, 360°): sottraendo 360 a quelli > 180 li riportiamo in [-180°, 180°], così ogni direzione e la sua opposta cadono in intervalli simmetrici.",
-          "val è il modulo del pixel corrente; q e p conterranno i due vicini da confrontare.",
+          "phase restituisce angoli in [0°, 360°).",
+          "Un angolo a e a + 180° indicano la stessa retta e quindi la stessa coppia di vicini: sottraendo 180 restano solo 4 casi da gestire invece di 8.",
         ],
       },
       {
-        startMatch: "// 1. Settore Orizzontale",
-        endMatch: "p = mag.at<uchar>(r + 1, c + 1);",
-        title: "NMS · Quantizzazione della direzione",
-        text: "Il gradiente punta nella direzione di massima variazione, cioè perpendicolare al bordo. Per sapere se il pixel è il «crinale» del bordo lo confrontiamo con i due vicini che stanno lungo il gradiente. Dato che i vicini discreti sono solo 8, la direzione viene arrotondata a uno di 4 settori da 45°:",
+        startMatch: "uchar q, r;",
+        endMatch: "r = mag.at<uchar>(i + 1, j - 1);",
+        title: "NMS · I 4 settori",
+        text: "Il gradiente è perpendicolare al bordo. Confrontiamo il pixel con i due vicini lungo il gradiente (q e r), arrotondando la direzione al multiplo di 45° più vicino:",
         points: [
-          "≈0° / 180° (gradiente orizzontale → bordo verticale): vicini Ovest (c-1) ed Est (c+1).",
-          "≈45° / -135°: vicini sulla diagonale (r-1, c+1) e (r+1, c-1).",
-          "≈90° / -90° (gradiente verticale → bordo orizzontale): vicini Nord (r-1) e Sud (r+1).",
-          "≈135° / -45° (ramo else): vicini sull'altra diagonale (r-1, c-1) e (r+1, c+1).",
+          "0° (a < 22,5 o a ≥ 157,5): sinistra e destra → (i, j−1), (i, j+1).",
+          "45° (fino a 67,5): diagonale principale → (i−1, j−1), (i+1, j+1).",
+          "90° (fino a 112,5): sopra e sotto → (i−1, j), (i+1, j).",
+          "135° (il resto): anti-diagonale → (i−1, j+1), (i+1, j−1).",
         ],
-        note: "Ogni settore è largo 45° (±22,5° attorno alla direzione principale) e compare due volte perché una direzione e la sua opposta individuano la stessa coppia di vicini.",
+        note: "Trucco per ricordarlo: le soglie sono 22,5 · 67,5 · 112,5 · 157,5 (cioè 45° · k ± 22,5°). Nelle immagini la y cresce verso il basso, quindi 45° punta in basso a destra: per questo i vicini sono (i−1, j−1) e (i+1, j+1).",
       },
       {
-        startMatch: "if (val >= q && val >= p) {",
-        endMatch: "nms.at<uchar>(r, c) = val;",
+        startMatch: "if (mag.at<uchar>(i, j) >= q && mag.at<uchar>(i, j) >= r)",
+        endMatch: "nms.at<uchar>(i, j) = mag.at<uchar>(i, j);",
         title: "NMS · Massimo locale",
-        text: "Se il modulo del pixel è maggiore o uguale a entrambi i vicini lungo il gradiente, il pixel è un massimo locale e ne copiamo il valore in nms; altrimenti resta 0. Il risultato è un bordo largo un solo pixel, ma ancora con intensità variabili: a decidere cosa è davvero bordo sarà l'isteresi.",
+        text: "Se il pixel è maggiore o uguale a entrambi i vicini è il «crinale» del bordo e ne copiamo il valore; altrimenti resta 0. Il risultato sono bordi larghi un pixel, ancora con intensità diverse: a decidere quali tenere sarà l'isteresi.",
       },
       {
-        startMatch: "void hysteresisThreshold(const Mat &nms, Mat &dst, int lowThresh, int highThresh) {",
-        endMatch: "dst.at<uchar>(r, c) = 255;",
-        title: "Isteresi · Bordi forti",
-        text: "L'output dst parte tutto nero. Scorriamo la mappa nms: ogni pixel con valore ≥ highThresh è un bordo forte, cioè sicuramente un bordo, e viene impostato a 255.",
-      },
-      {
-        startMatch: "// E promuoviamo i bordi deboli connessi nell'intorno 3x3",
-        endMatch: "dst.at<uchar>(r + dr, c + dc) = 255;",
-        title: "Isteresi · Promozione dei bordi deboli",
-        text: "Attorno a ogni bordo forte si esamina l'intorno 3×3 (dr, dc ∈ {-1, 0, 1}). I vicini deboli, con valore in [lowThresh, highThresh), vengono promossi a 255 perché sono connessi a un bordo certo. I pixel sotto lowThresh, e i deboli isolati, restano a 0.",
+        startMatch: "void hysteresis(const Mat &nms, Mat &dst, int lth, int hth) {",
+        endMatch: "dst.at<uchar>(i + u, j + v) = 255;",
+        title: "Isteresi",
+        text: "dst parte nera. Ogni pixel con valore ≥ hth è un bordo forte e diventa 255. Attorno a lui si guarda l'intorno 3×3 (u, v ∈ {−1, 0, 1}): i vicini deboli, con valore in [lth, hth), vengono promossi a 255 perché collegati a un bordo certo.",
         points: [
-          "La doppia soglia evita sia i bordi spezzati (una sola soglia alta) sia il rumore (una sola soglia bassa).",
-          "Il pixel centrale ha valore ≥ highThresh, quindi la condizione n < highThresh lo esclude automaticamente.",
+          "Sotto lth → mai bordo. Sopra hth → sempre bordo. In mezzo → bordo solo se vicino a un forte.",
+          "Con una sola soglia alta i bordi si spezzerebbero, con una sola soglia bassa entrerebbe il rumore.",
         ],
-        note: "Questa versione fa un solo passaggio: promuove i deboli adiacenti a un forte, ma non propaga lungo catene di deboli. Il Canny «completo» ripete la promozione (con una coda o uno stack) finché nessun pixel cambia.",
+        note: "Versione semplificata: un solo passaggio, quindi promuove solo i deboli che toccano direttamente un forte e non segue le catene di deboli.",
       },
       {
         startMatch: "GaussianBlur(src, gauss, Size(5, 5), 0);",
         endMatch: "Sobel(gauss, dy, CV_32F, 0, 1, 3);",
-        title: "Pipeline · Smoothing e gradienti",
-        text: "Le derivate amplificano il rumore, quindi prima si applica un filtro gaussiano 5×5 (sigma = 0 → OpenCV lo calcola dalla dimensione del kernel). Poi Sobel 3×3 calcola la derivata in x (dx: ordine 1, 0) e in y (dy: ordine 0, 1).",
-        points: [
-          "CV_32F è obbligatorio: le derivate possono essere negative e su 8 bit verrebbero troncate a 0.",
-          "dx è grande sui bordi verticali, dy su quelli orizzontali.",
-        ],
+        title: "Pipeline · Blur e Sobel",
+        text: "Le derivate amplificano il rumore, quindi prima si sfoca con un filtro gaussiano 5×5 (sigma 0 = calcolato da OpenCV). Poi Sobel 3×3: dx = derivata in x (1, 0), dy = derivata in y (0, 1).",
+        points: ["CV_32F perché le derivate possono essere negative: su 8 bit verrebbero tagliate a 0."],
       },
       {
         startMatch: "magnitude(dx, dy, mag);",
-        endMatch: "cv::phase(dx, dy, phase, true);",
+        endMatch: "phase(dx, dy, angle, true);",
         title: "Pipeline · Modulo e fase",
         text: "Per ogni pixel il gradiente è il vettore (dx, dy).",
         points: [
-          "magnitude: |G| = √(dx² + dy²), la «forza» del bordo.",
-          "normalize con NORM_MINMAX porta il modulo in [0, 255] su 8 bit (CV_8U): così le soglie 30 e 90 sono indipendenti dal contrasto dell'immagine.",
-          "cv::phase con true restituisce l'angolo atan2(dy, dx) in gradi, in [0°, 360°). Si scrive cv::phase perché la variabile locale si chiama anch'essa phase.",
+          "magnitude: √(dx² + dy²) = forza del bordo.",
+          "normalize NORM_MINMAX → 0–255 su 8 bit (CV_8U): così le soglie non dipendono dal contrasto dell'immagine.",
+          "phase con true → angolo in gradi in [0°, 360°).",
         ],
       },
       {
-        startMatch: "nonMaxSuppression(mag, phase, nms);",
-        endMatch: "hysteresisThreshold(nms, dst, lowThresh, highThresh);",
-        title: "Pipeline · Assottigliamento e sogliatura",
-        text: "Le due fasi vengono chiamate in sequenza: la NMS trasforma il modulo in bordi larghi un pixel (nms), l'isteresi li binarizza in dst (0 = sfondo, 255 = bordo).",
+        startMatch: "nonMaxSuppression(mag, angle, nms);",
+        endMatch: "hysteresis(nms, dst, lth, hth);",
+        title: "Pipeline · NMS e isteresi",
+        text: "Prima si assottigliano i bordi (nms), poi si binarizzano con le due soglie in dst (0 = sfondo, 255 = bordo).",
       },
       {
         startMatch: "myCanny(src, dst, 30, 90);",
-        title: "Scelta delle soglie",
-        text: "lowThresh = 30 e highThresh = 90 sono riferite al modulo normalizzato in [0, 255]. Il rapporto 1:3 è quello consigliato da Canny (tra 1:2 e 1:3): soglie più alte danno meno bordi e più puliti, soglie più basse più dettagli ma anche più rumore.",
+        title: "Soglie 30 e 90",
+        text: "Le soglie valgono sul modulo normalizzato 0–255. Il rapporto 1:3 è quello consigliato da Canny e usato anche nel tutorial OpenCV (highThreshold = lowThreshold × 3). Soglie più alte danno meno bordi e più puliti, più basse più dettagli ma anche più rumore.",
       },
     ],
     codeReference: `#include <opencv2/opencv.hpp>
-#include <iostream>
 
 using namespace std;
 using namespace cv;
 
-// FASE 1: Soppressione dei non-massimi
-void nonMaxSuppression(const Mat &mag, const Mat &phase, Mat &nms) {
+// 1. Non-maximum suppression: tiene solo i massimi lungo il gradiente
+void nonMaxSuppression(const Mat &mag, const Mat &angle, Mat &nms) {
     nms = Mat::zeros(mag.size(), CV_8U);
+    for (int i = 1; i < mag.rows - 1; i++) {
+        for (int j = 1; j < mag.cols - 1; j++) {
+            float a = angle.at<float>(i, j);
+            if (a >= 180) a -= 180;          // a e a+180 sono la stessa direzione
 
-    for (int r = 1; r < mag.rows - 1; r++) {
-        for (int c = 1; c < mag.cols - 1; c++) {
-            float ang = phase.at<float>(r, c);
-            if (ang > 180.0f) ang -= 360.0f; // Mappa in [-180, 180]
-
-            uchar val = mag.at<uchar>(r, c);
-            uchar q = 0, p = 0;
-
-            // 1. Settore Orizzontale (~0° / 180°): confronta Ovest ed Est
-            if ((ang >= -22.5f && ang <= 22.5f) || ang <= -157.5f || ang >= 157.5f) {
-                q = mag.at<uchar>(r, c - 1);
-                p = mag.at<uchar>(r, c + 1);
-            }
-            // 2. Settore Diagonale (~45° / -135°): Nord-Est e Sud-Ovest
-            else if ((ang > 22.5f && ang <= 67.5f) || (ang >= -157.5f && ang < -112.5f)) {
-                q = mag.at<uchar>(r - 1, c + 1);
-                p = mag.at<uchar>(r + 1, c - 1);
-            }
-            // 3. Settore Verticale (~90° / -90°): Nord e Sud
-            else if ((ang > 67.5f && ang <= 112.5f) || (ang >= -112.5f && ang < -67.5f)) {
-                q = mag.at<uchar>(r - 1, c);
-                p = mag.at<uchar>(r + 1, c);
-            }
-            // 4. Settore Anti-diagonale (~135° / -45°): Nord-Ovest e Sud-Est
-            else {
-                q = mag.at<uchar>(r - 1, c - 1);
-                p = mag.at<uchar>(r + 1, c + 1);
+            uchar q, r;                      // i due vicini lungo il gradiente
+            if (a < 22.5 || a >= 157.5) {    // 0°: sinistra / destra
+                q = mag.at<uchar>(i, j - 1);
+                r = mag.at<uchar>(i, j + 1);
+            } else if (a < 67.5) {           // 45°: diagonale
+                q = mag.at<uchar>(i - 1, j - 1);
+                r = mag.at<uchar>(i + 1, j + 1);
+            } else if (a < 112.5) {          // 90°: sopra / sotto
+                q = mag.at<uchar>(i - 1, j);
+                r = mag.at<uchar>(i + 1, j);
+            } else {                         // 135°: anti-diagonale
+                q = mag.at<uchar>(i - 1, j + 1);
+                r = mag.at<uchar>(i + 1, j - 1);
             }
 
-            if (val >= q && val >= p) {
-                nms.at<uchar>(r, c) = val;
-            }
+            if (mag.at<uchar>(i, j) >= q && mag.at<uchar>(i, j) >= r)
+                nms.at<uchar>(i, j) = mag.at<uchar>(i, j);
         }
     }
 }
 
-// FASE 2: Isteresi con doppia soglia
-void hysteresisThreshold(const Mat &nms, Mat &dst, int lowThresh, int highThresh) {
+// 2. Isteresi: forti -> 255, deboli -> 255 solo se vicini a un forte
+void hysteresis(const Mat &nms, Mat &dst, int lth, int hth) {
     dst = Mat::zeros(nms.size(), CV_8U);
-
-    for (int r = 1; r < nms.rows - 1; r++) {
-        for (int c = 1; c < nms.cols - 1; c++) {
-            // Se troviamo un bordo forte, lo confermiamo
-            if (nms.at<uchar>(r, c) >= highThresh) {
-                dst.at<uchar>(r, c) = 255;
-                // E promuoviamo i bordi deboli connessi nell'intorno 3x3
-                for (int dr = -1; dr <= 1; dr++) {
-                    for (int dc = -1; dc <= 1; dc++) {
-                        uchar n = nms.at<uchar>(r + dr, c + dc);
-                        if (n >= lowThresh && n < highThresh) {
-                            dst.at<uchar>(r + dr, c + dc) = 255;
-                        }
+    for (int i = 1; i < nms.rows - 1; i++) {
+        for (int j = 1; j < nms.cols - 1; j++) {
+            if (nms.at<uchar>(i, j) >= hth) {
+                dst.at<uchar>(i, j) = 255;
+                for (int u = -1; u <= 1; u++)
+                    for (int v = -1; v <= 1; v++) {
+                        uchar n = nms.at<uchar>(i + u, j + v);
+                        if (n >= lth && n < hth)
+                            dst.at<uchar>(i + u, j + v) = 255;
                     }
-                }
             }
         }
     }
 }
 
-// FASE 3: Orchestratore Pipeline Canny
-void myCanny(const Mat &src, Mat &dst, int lowThresh, int highThresh) {
-    Mat gauss, dx, dy, mag, phase, nms;
-
-    // A. Filtro antirumore
+// 3. Pipeline: blur -> Sobel -> modulo e fase -> NMS -> isteresi
+void myCanny(const Mat &src, Mat &dst, int lth, int hth) {
+    Mat gauss, dx, dy, mag, angle, nms;
     GaussianBlur(src, gauss, Size(5, 5), 0);
-
-    // B. Calcolo gradienti spaziali
     Sobel(gauss, dx, CV_32F, 1, 0, 3);
     Sobel(gauss, dy, CV_32F, 0, 1, 3);
-
-    // C. Modulo normalizzato a 8 bit e Angolo in gradi
     magnitude(dx, dy, mag);
     normalize(mag, mag, 0, 255, NORM_MINMAX, CV_8U);
-    cv::phase(dx, dy, phase, true);
-
-    // D. Chiamata ai due moduli
-    nonMaxSuppression(mag, phase, nms);
-    hysteresisThreshold(nms, dst, lowThresh, highThresh);
+    phase(dx, dy, angle, true);          // gradi in [0, 360)
+    nonMaxSuppression(mag, angle, nms);
+    hysteresis(nms, dst, lth, hth);
 }
 
 int main(int argc, char** argv) {
-    if (argc < 2) return -1;
     Mat src = imread(argv[1], IMREAD_GRAYSCALE);
     if (src.empty()) return -1;
-
     Mat dst;
-    myCanny(src, dst, 30, 90);
-
-    imshow("Originale", src);
-    imshow("Bordi Canny", dst);
+    myCanny(src, dst, 30, 90);           // rapporto 1:3 tra le soglie
+    imshow("src", src);
+    imshow("Canny", dst);
     waitKey(0);
     return 0;
 }`,
