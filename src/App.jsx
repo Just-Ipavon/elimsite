@@ -1,9 +1,19 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import StudyArea from './pages/StudyArea';
 import IdeArea from './pages/IdeArea';
 import ExamArea from './pages/ExamArea';
+
+// Ogni pagina si apre dall'inizio, non alla posizione di scorrimento della precedente.
+const ScrollToTop = () => {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+  return null;
+};
 
 function App() {
   return (
@@ -14,6 +24,7 @@ function App() {
       >
         Vai al contenuto
       </a>
+      <ScrollToTop />
       <Navbar />
       <main id="main" className="flex flex-1 flex-col">
         <Routes>

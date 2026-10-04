@@ -1,14 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Play } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, Loader2, Play } from 'lucide-react';
 import { algorithms } from '../data/algorithms';
 import lenaSrc from '../assets/lena.png';
 import { clearCanvas, defaultParams, runVisualAlgorithm, useOpenCv } from '../lib/opencv';
+import { baseEditorOptions } from '../lib/monacoTheme';
 import AlgorithmSelect from '../components/ui/AlgorithmSelect';
 import Callout from '../components/ui/Callout';
 import EditorFrame from '../components/ui/EditorFrame';
 import Panel from '../components/ui/Panel';
 import ParamControls from '../components/ParamControls';
 import ExplanationPanel from '../components/study/ExplanationPanel';
+import ExplanationSheet from '../components/study/ExplanationSheet';
+import { useIsDesktop } from '../lib/useIsDesktop';
 
 // Converte startMatch/endMatch delle spiegazioni in intervalli di righe del codice.
 const parseExplanations = (algo) => {
@@ -35,6 +38,23 @@ const engineLabel = { loading: 'Caricamento OpenCV…', ready: 'Esegui', error: 
 
 const editorOptions = { readOnly: true, wordWrap: 'on', domReadOnly: true };
 
+// Su telefono il C++ andrebbe a capo quasi a ogni riga: meglio scorrere in
+// orizzontale dentro l'editor, con carattere e margini più compatti. La
+// rotella/il trascinamento non resta intrappolato nell'editor.
+const mobileEditorOptions = {
+  ...editorOptions,
+  wordWrap: 'off',
+  fontSize: 12,
+  lineHeight: 18,
+  lineNumbersMinChars: 3,
+  lineDecorationsWidth: 6,
+  folding: false,
+  glyphMargin: false,
+  stickyScroll: { enabled: false },
+  padding: { top: 10, bottom: 10 },
+  scrollbar: { ...baseEditorOptions.scrollbar, alwaysConsumeMouseWheel: false },
+};
+
 const tabs = [
   { id: 'explanation', label: 'Spiegazione' },
   { id: 'viewer', label: 'Visualizzatore' },
@@ -57,7 +77,13 @@ const StudyArea = () => {
   const [params, setParams] = useState(() => defaultParams(algorithms[0]));
   const [hasOutput, setHasOutput] = useState(false);
   const [tab, setTab] = useState('explanation');
+  const [stepsOpen, setStepsOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const cvStatus = useOpenCv();
+  const isDesktop = useIsDesktop();
+  // Letto dentro gli handler di Monaco, registrati una sola volta al mount.
+  const isDesktopRef = useRef(isDesktop);
+  isDesktopRef.current = isDesktop;
 
   const imgRef = useRef(null);
   const canvasRef = useRef(null);
@@ -66,6 +92,7 @@ const StudyArea = () => {
   const decorationsRef = useRef(null);
   const activeDecorationRef = useRef(null);
   const explanationsRef = useRef([]);
+  const editorPanelRef = useRef(null);
 
   const explanations = useMemo(() => parseExplanations(selectedAlgo), [selectedAlgo]);
   const activeIndex = explanations.findIndex((exp) => sameBlock(exp, activeExplanation));
@@ -90,13 +117,30 @@ const StudyArea = () => {
     editorRef.current = editor;
     monacoRef.current = monaco;
 
-    editor.onMouseDown((e) => {
-      const line = e.target.position?.lineNumber;
-      if (!line) return;
+    const openBlockAt = (line) => {
       const clicked = explanationsRef.current.find((exp) => line >= exp.startLine && line <= exp.endLine);
       setActiveExplanation(clicked ?? null);
-      // La spiegazione appare subito accanto al codice.
+      // La spiegazione appare subito accanto al codice (su mobile nel pannello in basso).
       if (clicked) setTab('explanation');
+      if (!isDesktopRef.current) {
+        setSheetOpen(Boolean(clicked));
+        // Il pannello copre la metà bassa: il blocco va portato in cima all'editor.
+        if (clicked) {
+          bringEditorIntoView();
+          editor.revealLineNearTop(clicked.startLine);
+        }
+      }
+    };
+
+    editor.onMouseDown((e) => {
+      const line = e.target.position?.lineNumber;
+      if (line) openBlockAt(line);
+    });
+
+    // Con il tocco Monaco non emette onMouseDown: sposta solo il cursore (sorgente 'mouse').
+    editor.onDidChangeCursorPosition((e) => {
+      if (isDesktopRef.current || e.source !== 'mouse') return;
+      openBlockAt(e.position.lineNumber);
     });
 
     applyDecorations(selectedAlgo);
@@ -135,15 +179,37 @@ const StudyArea = () => {
     setParams(defaultParams(algo));
     setHasOutput(false);
     setActiveExplanation(null);
+    setSheetOpen(false);
     setRunError(null);
     clearCanvas(canvasRef.current);
   };
 
-  // Dall'elenco: porta il blocco al centro dell'editor e lo rende attivo.
+  // Su mobile l'editor può essere fuori schermo: lo riporta in vista prima di mostrare la riga.
+  // In alto (sotto la barra) e non al centro, perché la metà bassa la occupa il pannello.
+  function bringEditorIntoView() {
+    if (isDesktopRef.current) return;
+    editorPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // Dall'elenco: porta il blocco nell'editor e lo rende attivo (su mobile apre il pannello in basso).
   const selectExplanation = (exp) => {
     setActiveExplanation(exp);
-    editorRef.current?.revealLineInCenter(exp.startLine);
+    if (isDesktopRef.current) {
+      editorRef.current?.revealLineInCenter(exp.startLine);
+      return;
+    }
+    bringEditorIntoView();
+    editorRef.current?.revealLineNearTop(exp.startLine);
+    setSheetOpen(true);
   };
+
+  // Nel pannello in basso il codice è già in vista: basta spostare l'editor.
+  const selectFromSheet = (exp) => {
+    setActiveExplanation(exp);
+    editorRef.current?.revealLineNearTop(exp.startLine);
+  };
+
+  const closeSheet = useCallback(() => setSheetOpen(false), []);
 
   // Evidenzia nell'editor la riga del codice C++ che contiene il parametro.
   const showInCode = (snippet) => {
@@ -152,6 +218,7 @@ const StudyArea = () => {
     const index = selectedAlgo.codeReference.indexOf(snippet);
     if (!editor || !monaco || index === -1) return;
     const line = selectedAlgo.codeReference.slice(0, index).split('\n').length;
+    bringEditorIntoView();
     editor.revealLineInCenter(line);
     editor.setSelection(new monaco.Range(line, 1, line, editor.getModel().getLineMaxColumn(line)));
   };
@@ -178,7 +245,7 @@ const StudyArea = () => {
   const hiddenOnDesktop = (id) => (tab === id ? '' : 'lg:hidden');
 
   return (
-    <div className="mx-auto grid w-full max-w-page gap-4 px-4 py-4 md:px-6 lg:h-[calc(100dvh-3.5rem)] lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[260px_minmax(0,1fr)_360px] xl:grid-cols-[288px_minmax(0,1fr)_400px]">
+    <div className="grid w-full gap-4 px-4 py-4 md:px-6 lg:h-[calc(100dvh-3.5rem)] lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[clamp(240px,18vw,380px)_minmax(0,1fr)_clamp(340px,27vw,600px)]">
       {/* Sinistra: scelta dell'algoritmo e teoria */}
       <aside className="flex flex-col gap-5 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
         <div>
@@ -195,10 +262,30 @@ const StudyArea = () => {
 
         {selectedAlgo.steps?.length > 0 && (
           <section aria-labelledby="steps-title">
-            <h2 id="steps-title" className="eyebrow mb-2">
+            {/* Su mobile i passi sono chiusi di default per non spingere il codice in basso. */}
+            <h2 id="steps-title" className="eyebrow mb-2 hidden lg:block">
               Come funziona
             </h2>
-            <ol className="flex flex-col gap-2.5 border-t border-line pt-3">
+            <button
+              type="button"
+              onClick={() => setStepsOpen((open) => !open)}
+              aria-expanded={stepsOpen}
+              aria-controls="steps-list"
+              className="flex h-10 w-full items-center justify-between gap-3 border-t border-line text-left lg:hidden"
+            >
+              <span className="eyebrow">
+                Come funziona · <span className="tabular-nums">{selectedAlgo.steps.length} passi</span>
+              </span>
+              <ChevronDown
+                size={16}
+                aria-hidden="true"
+                className={`text-ink-3 transition-transform ${stepsOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+            <ol
+              id="steps-list"
+              className={`flex-col gap-2.5 border-t border-line pt-3 lg:flex ${stepsOpen ? 'flex' : 'hidden'}`}
+            >
               {selectedAlgo.steps.map((step, i) => (
                 <li key={step} className="flex gap-3 text-[13px] text-ink-2 leading-relaxed">
                   <span className="font-mono text-2xs tabular-nums text-ink-3 pt-[3px] w-5 shrink-0">
@@ -217,10 +304,18 @@ const StudyArea = () => {
         title="Implementazione C++"
         actions={
           <span className="font-mono text-2xs text-ink-3">
-            {explanations.length > 0 ? 'clicca le zone evidenziate' : 'sola lettura'}
+            {explanations.length > 0 ? (
+              <>
+                <span className="sm:hidden">tocca le zone</span>
+                <span className="hidden sm:inline">clicca le zone evidenziate</span>
+              </>
+            ) : (
+              'sola lettura'
+            )}
           </span>
         }
-        className="h-[65dvh] min-h-[420px] lg:h-auto lg:min-h-0"
+        ref={editorPanelRef}
+        className="h-[60dvh] min-h-[360px] scroll-mt-16 lg:h-auto lg:min-h-0"
         bodyClassName="relative flex-1"
       >
         <div className="absolute inset-0">
@@ -228,7 +323,7 @@ const StudyArea = () => {
             className="rounded-b-lg"
             value={selectedAlgo.codeReference}
             onMount={handleEditorMount}
-            options={editorOptions}
+            options={isDesktop ? editorOptions : mobileEditorOptions}
           />
         </div>
       </Panel>
@@ -295,7 +390,7 @@ const StudyArea = () => {
                 type="button"
                 onClick={() => runAlgorithm()}
                 disabled={cvStatus !== 'ready' || processing}
-                className="btn btn-primary btn-sm shrink-0"
+                className="btn btn-primary btn-sm h-10 shrink-0 px-4 lg:h-8 lg:px-2.5"
               >
                 {processing || cvStatus === 'loading' ? (
                   <Loader2 size={14} className="animate-spin" aria-hidden="true" />
@@ -361,6 +456,16 @@ const StudyArea = () => {
           </div>
         </section>
       </div>
+
+      {sheetOpen && !isDesktop && activeIndex !== -1 && (
+        <ExplanationSheet
+          explanations={explanations}
+          active={explanations[activeIndex]}
+          activeIndex={activeIndex}
+          onSelect={selectFromSheet}
+          onClose={closeSheet}
+        />
+      )}
     </div>
   );
 };

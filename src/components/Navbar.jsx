@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { Moon, Sun } from 'lucide-react';
 import { useTheme } from '../theme/theme';
 
@@ -29,11 +29,13 @@ const Mark = () => (
 
 const Navbar = () => {
   const { theme, toggleTheme } = useTheme();
+  // Studio, Pratica ed Esame usano tutta la larghezza: l'intestazione si allinea a loro.
+  const fullWidth = useLocation().pathname !== '/';
   const nextLabel = theme === 'dark' ? 'Passa al tema chiaro' : 'Passa al tema scuro';
 
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur supports-[backdrop-filter]:bg-bg/75">
-      <nav className="mx-auto flex h-14 max-w-page items-center gap-3 px-4 sm:gap-6 md:px-6" aria-label="Navigazione principale">
+      <nav className={`mx-auto flex h-14 ${fullWidth ? '' : 'max-w-page'} items-center gap-3 px-4 sm:gap-6 md:px-6`} aria-label="Navigazione principale">
         <NavLink to="/" className="flex items-center gap-2.5 rounded-sm">
           <Mark />
           <span className="text-[15px] font-semibold tracking-tight text-ink">ImageProc</span>

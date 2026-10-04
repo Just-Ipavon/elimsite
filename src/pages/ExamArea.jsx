@@ -9,6 +9,7 @@ import VerificationResult from '../components/VerificationResult';
 import Callout from '../components/ui/Callout';
 import Panel from '../components/ui/Panel';
 import { EditorPanel, ResultEmpty, SidePane, WorkspaceShell } from '../components/workspace/Workspace';
+import { scrollIntoViewOnMobile } from '../lib/useIsDesktop';
 
 const EXAM_DURATION_S = 90 * 60;
 const WARNING_THRESHOLD_S = 5 * 60;
@@ -39,6 +40,7 @@ const ExamArea = () => {
   const canvasRef = useRef(null);
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
+  const resultRef = useRef(null);
   const [diagnostics, setDiagnostics] = useState([]);
 
   const setProblems = (list) => {
@@ -88,6 +90,7 @@ const ExamArea = () => {
   const verifyCode = () => {
     setVerificationResult(verifySolution(code, selectedAlgo.codeReference));
     setProblems(diagnoseCode(code, selectedAlgo.codeReference, { revealReference: false }));
+    scrollIntoViewOnMobile(resultRef.current);
   };
 
   const submitFromEditor = () => {
@@ -117,37 +120,53 @@ const ExamArea = () => {
 
   const runLabel = processing ? 'Elaborazione…' : cvStatus === 'loading' ? 'Caricamento OpenCV…' : 'Mostra risultato atteso';
 
+  // Timer e Consegna compaiono una volta sola: in toolbar da lg, nella barra fissa sotto.
+  const timer = (className = '') => (
+    <span
+      role="timer"
+      aria-label={`Tempo rimanente ${formatTime(timeLeft)}`}
+      className={`h-9 items-center gap-2 rounded-md border px-3 font-mono text-sm tabular-nums ${timerTone} ${className}`}
+    >
+      <Clock size={14} aria-hidden="true" />
+      {formatTime(timeLeft)}
+    </span>
+  );
+
+  const submitButton = (className = '') => (
+    <button type="button" onClick={verifyCode} disabled={timeUp} className={`btn btn-primary ${className}`}>
+      <Send size={15} aria-hidden="true" />
+      Consegna
+    </button>
+  );
+
   const toolbar = (
     <>
-      <div className="mr-auto flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+      <div className="mr-auto flex min-w-0 flex-1 flex-col gap-0.5 lg:flex-none lg:flex-row lg:items-baseline lg:gap-3">
         <h1 className="font-display text-xl tracking-tight text-ink">Esame</h1>
-        <p className="min-w-0 text-sm text-ink-2">
+        <p className="min-w-0 truncate text-sm text-ink-2">
           Traccia: <span className="font-medium text-ink">{selectedAlgo.name}</span>
         </p>
       </div>
-      <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-        <span
-          role="timer"
-          aria-label={`Tempo rimanente ${formatTime(timeLeft)}`}
-          className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 font-mono text-sm tabular-nums ${timerTone}`}
-        >
-          <Clock size={14} aria-hidden="true" />
-          {formatTime(timeLeft)}
-        </span>
-        <button type="button" onClick={newExam} className="btn btn-secondary ml-auto sm:ml-0" title="Nuovo esame">
+      <div className="flex shrink-0 items-center gap-2">
+        {timer('hidden lg:inline-flex')}
+        <button type="button" onClick={newExam} className="btn btn-secondary max-[400px]:w-10 max-[400px]:px-0" title="Nuovo esame">
           <Shuffle size={15} aria-hidden="true" />
           <span className="max-[400px]:sr-only">Nuovo esame</span>
         </button>
-        <button type="button" onClick={verifyCode} disabled={timeUp} className="btn btn-primary">
-          <Send size={15} aria-hidden="true" />
-          Consegna
-        </button>
+        {submitButton('hidden lg:inline-flex')}
       </div>
     </>
   );
 
+  const actionBar = (
+    <>
+      {timer('inline-flex h-10 shrink-0')}
+      {submitButton('h-10 flex-1')}
+    </>
+  );
+
   return (
-    <WorkspaceShell toolbar={toolbar}>
+    <WorkspaceShell toolbar={toolbar} actionBar={actionBar}>
       <EditorPanel
         value={code}
         onChange={(value) => setCode(value ?? '')}
@@ -173,7 +192,12 @@ const ExamArea = () => {
       />
 
       <SidePane>
-        <Panel title="Esito" className="min-h-[14rem] flex-1 lg:min-h-[10rem]" bodyClassName="flex-1 overflow-y-auto p-4">
+        <Panel
+          ref={resultRef}
+          title="Esito"
+          className="scroll-mt-[4.25rem] flex-1 lg:min-h-[10rem]"
+          bodyClassName="flex-1 space-y-4 overflow-y-auto p-4"
+        >
           {timeUp && !verificationResult && (
             <Callout tone="err" role="alert" title="Tempo scaduto">
               Non hai consegnato in tempo. Avvia un nuovo esame per riprovare.
@@ -214,7 +238,7 @@ const ExamArea = () => {
             </button>
           }
         >
-          <div className="grid max-w-[22rem] grid-cols-2 gap-3">
+          <div className="grid max-w-[22rem] grid-cols-2 min-[1800px]:max-w-[28rem] gap-3">
             <figure className="min-w-0">
               <figcaption className="eyebrow mb-1.5">Sorgente</figcaption>
               <div className="overflow-hidden rounded-md border border-line bg-sunken">

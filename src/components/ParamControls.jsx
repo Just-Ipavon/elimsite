@@ -27,7 +27,7 @@ const ParamControls = ({ params, values, onChange, onReset, onShowCode }) => {
           type="button"
           onClick={onReset}
           disabled={!anyChanged}
-          className="btn btn-ghost btn-sm h-7 px-2 text-xs"
+          className="btn btn-ghost btn-sm h-10 px-2 text-xs -mr-2 lg:mr-0 lg:h-7"
           title="Ripristina i valori del codice C++"
         >
           <RotateCcw size={12} aria-hidden="true" /> Ripristina
@@ -58,12 +58,12 @@ const ParamControls = ({ params, values, onChange, onReset, onShowCode }) => {
                 step={param.step}
                 value={values[param.key]}
                 onChange={(e) => onChange(param.key, Number(e.target.value))}
-                className="range mt-1"
+                className="range h-10 lg:mt-1 lg:h-5"
               />
               <button
                 type="button"
                 onClick={() => onShowCode(param.code)}
-                className="block max-w-full truncate rounded-sm text-left font-mono text-2xs text-ink-3 hover:text-accent transition-colors"
+                className="block max-w-full truncate rounded-sm py-1.5 text-left lg:py-0 font-mono text-2xs text-ink-3 hover:text-accent transition-colors"
                 title="Mostra nel codice"
                 aria-label={`Mostra nel codice: ${param.code.trim()}`}
               >
