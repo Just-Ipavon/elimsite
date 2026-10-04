@@ -1,17 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import Editor from '@monaco-editor/react';
-import { Play, RotateCcw } from 'lucide-react';
+import { Eye, EyeOff, Play, RotateCcw } from 'lucide-react';
 import { algorithms } from '../data/algorithms';
 import { DRACULA_THEME, baseEditorOptions, defineDraculaTheme } from '../lib/monacoTheme';
-import { functionSignatures, verifySolution } from '../lib/verify';
+import { verifySolution } from '../lib/verify';
 import VerificationResult from '../components/VerificationResult';
 
 const IdeArea = () => {
   const [selectedAlgo, setSelectedAlgo] = useState(algorithms[0]);
   const [code, setCode] = useState(algorithms[0].cppSkeleton);
   const [verificationResult, setVerificationResult] = useState(null);
-
-  const signatures = useMemo(() => functionSignatures(selectedAlgo.codeReference), [selectedAlgo]);
+  const [showReference, setShowReference] = useState(true);
 
   const handleAlgoChange = (e) => {
     const algo = algorithms.find((a) => a.id === e.target.value);
@@ -33,7 +32,7 @@ const IdeArea = () => {
         <div>
           <h1 className="text-2xl font-bold font-mono text-dracula-pink">IDE di Pratica</h1>
           <p className="text-sm text-dracula-comment">
-            Scrivi il tuo algoritmo in C++ e confrontalo con l'implementazione di riferimento.
+            Scrivi il tuo algoritmo in C++ con il codice di riferimento a fianco, poi verificalo.
           </p>
         </div>
 
@@ -75,7 +74,8 @@ const IdeArea = () => {
       </div>
 
       <div className="flex-grow flex flex-col lg:flex-row gap-4 min-h-0">
-        <div className="w-full lg:w-2/3 h-[60vh] lg:h-full border rounded-lg overflow-hidden border-dracula-comment">
+        {/* Colonna sinistra: il codice dello studente */}
+        <div className="w-full lg:w-1/2 h-[60vh] lg:h-full border rounded-lg overflow-hidden border-dracula-comment">
           <Editor
             height="100%"
             language="cpp"
@@ -87,26 +87,52 @@ const IdeArea = () => {
           />
         </div>
 
-        <div className="w-full lg:w-1/3 lg:h-full glass rounded-lg p-4 flex flex-col overflow-y-auto">
-          <h2 className="text-lg font-bold text-dracula-cyan mb-2 border-b border-dracula-comment pb-2">Output</h2>
+        {/* Colonna destra: esito della verifica e codice di riferimento */}
+        <div className="w-full lg:w-1/2 lg:h-full flex flex-col gap-4 min-h-0">
+          <div className="glass rounded-lg p-4 shrink-0 max-h-[40%] overflow-y-auto">
+            <h2 className="text-lg font-bold text-dracula-cyan mb-2 border-b border-dracula-comment pb-2">Output</h2>
+            {verificationResult ? (
+              <VerificationResult
+                result={verificationResult}
+                successTitle="Verifica superata"
+                failureTitle="Verifica non superata"
+              />
+            ) : (
+              <p className="text-dracula-comment text-sm">
+                In attesa... Scegli un algoritmo, scrivi il codice e premi Verifica.
+              </p>
+            )}
+          </div>
 
-          {verificationResult ? (
-            <VerificationResult
-              result={verificationResult}
-              successTitle="Verifica superata"
-              failureTitle="Verifica non superata"
-            />
-          ) : (
-            <p className="text-dracula-comment text-sm mt-4">
-              In attesa... Scegli un algoritmo, scrivi il codice e premi Verifica.
-            </p>
-          )}
-
-          <div className="mt-auto pt-6">
-            <h3 className="text-sm font-bold text-dracula-orange mb-1">Funzioni da implementare:</h3>
-            <pre className="text-xs text-dracula-fg overflow-x-auto bg-dracula-bg p-2 rounded border border-dracula-current">
-              {signatures.join('\n')}
-            </pre>
+          <div className="glass rounded-lg p-4 flex flex-col flex-grow min-h-0">
+            <div className="flex items-center justify-between gap-2 mb-2 border-b border-dracula-comment pb-2">
+              <h2 className="text-lg font-bold text-dracula-yellow">Codice di riferimento</h2>
+              <button
+                type="button"
+                onClick={() => setShowReference((v) => !v)}
+                aria-expanded={showReference}
+                className="text-xs flex items-center gap-1 text-dracula-comment hover:text-dracula-fg"
+              >
+                {showReference ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}
+                {showReference ? 'Nascondi' : 'Mostra'}
+              </button>
+            </div>
+            {showReference ? (
+              <div className="h-[60vh] lg:h-auto lg:flex-grow min-h-0 rounded overflow-hidden border border-dracula-current">
+                <Editor
+                  height="100%"
+                  language="cpp"
+                  value={selectedAlgo.codeReference}
+                  beforeMount={defineDraculaTheme}
+                  theme={DRACULA_THEME}
+                  options={{ ...baseEditorOptions, readOnly: true, fontSize: 13, padding: { top: 12 } }}
+                />
+              </div>
+            ) : (
+              <p className="text-sm text-dracula-comment">
+                Codice nascosto: prova a scriverlo da solo e premi Mostra quando vuoi controllare.
+              </p>
+            )}
           </div>
         </div>
       </div>

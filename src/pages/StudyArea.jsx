@@ -4,7 +4,8 @@ import { Play, Image as ImageIcon, Lightbulb } from 'lucide-react';
 import { algorithms } from '../data/algorithms';
 import lenaSrc from '../assets/lena.png';
 import { DRACULA_THEME, baseEditorOptions, defineDraculaTheme } from '../lib/monacoTheme';
-import { clearCanvas, runVisualAlgorithm, useOpenCv } from '../lib/opencv';
+import { clearCanvas, defaultParams, runVisualAlgorithm, useOpenCv } from '../lib/opencv';
+import ParamControls from '../components/ParamControls';
 
 // Converte startMatch/endMatch delle spiegazioni in intervalli di righe del codice.
 const parseExplanations = (algo) => {
@@ -31,6 +32,8 @@ const StudyArea = () => {
   const [processing, setProcessing] = useState(false);
   const [activeExplanation, setActiveExplanation] = useState(null);
   const [runError, setRunError] = useState(null);
+  const [params, setParams] = useState(() => defaultParams(algorithms[0]));
+  const [hasOutput, setHasOutput] = useState(false);
   const cvStatus = useOpenCv();
 
   const imgRef = useRef(null);
@@ -69,19 +72,42 @@ const StudyArea = () => {
     applyDecorations(selectedAlgo);
   };
 
+  // Se l'output è già visibile, lo ricalcola quando si muove un cursore.
+  const rerunTimer = useRef(null);
+  const updateParams = (next) => {
+    setParams(next);
+    if (!hasOutput) return;
+    clearTimeout(rerunTimer.current);
+    rerunTimer.current = setTimeout(() => runAlgorithm(next), 150);
+  };
+
   // Le decorazioni vanno ricalcolate dopo che l'editor ha caricato il nuovo codice.
   useEffect(() => {
     applyDecorations(selectedAlgo);
   }, [selectedAlgo]);
 
   const handleAlgoChange = (e) => {
-    setSelectedAlgo(algorithms.find((a) => a.id === e.target.value));
+    const algo = algorithms.find((a) => a.id === e.target.value);
+    setSelectedAlgo(algo);
+    setParams(defaultParams(algo));
+    setHasOutput(false);
     setActiveExplanation(null);
     setRunError(null);
     clearCanvas(canvasRef.current);
   };
 
-  const runAlgorithm = () => {
+  // Evidenzia nell'editor la riga del codice C++ che contiene il parametro.
+  const showInCode = (snippet) => {
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    const index = selectedAlgo.codeReference.indexOf(snippet);
+    if (!editor || !monaco || index === -1) return;
+    const line = selectedAlgo.codeReference.slice(0, index).split('\n').length;
+    editor.revealLineInCenter(line);
+    editor.setSelection(new monaco.Range(line, 1, line, editor.getModel().getLineMaxColumn(line)));
+  };
+
+  const runAlgorithm = (values = params) => {
     if (cvStatus !== 'ready' || !imgRef.current || !canvasRef.current) return;
     setProcessing(true);
     setRunError(null);
@@ -89,7 +115,8 @@ const StudyArea = () => {
     // Lascia al browser il tempo di mostrare lo stato "in esecuzione".
     setTimeout(() => {
       try {
-        runVisualAlgorithm(selectedAlgo.id, imgRef.current, canvasRef.current);
+        runVisualAlgorithm(selectedAlgo.id, imgRef.current, canvasRef.current, values);
+        setHasOutput(true);
       } catch (err) {
         console.error('OpenCV execution error:', err);
         setRunError(`Errore durante l'esecuzione di OpenCV.js: ${err?.message ?? err}`);
@@ -199,7 +226,7 @@ const StudyArea = () => {
             </h2>
             <button
               type="button"
-              onClick={runAlgorithm}
+              onClick={() => runAlgorithm()}
               disabled={cvStatus !== 'ready' || processing}
               className="flex items-center space-x-2 bg-dracula-green text-dracula-bg px-5 py-2 rounded-lg font-bold hover:bg-opacity-80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -224,6 +251,14 @@ const StudyArea = () => {
             </figure>
           </div>
 
+          <ParamControls
+            params={selectedAlgo.params}
+            values={params}
+            onChange={(key, value) => updateParams({ ...params, [key]: value })}
+            onReset={() => updateParams(defaultParams(selectedAlgo))}
+            onShowCode={showInCode}
+          />
+
           {runError && (
             <p role="alert" className="mt-6 text-sm text-dracula-red text-center">
               {runError}
@@ -236,9 +271,10 @@ const StudyArea = () => {
           )}
 
           <p className="text-xs text-dracula-comment mt-8 text-center max-w-sm">
-            Il visualizzatore usa le funzioni native di OpenCV.js per emulare il risultato degli algoritmi C++ nel
-            browser. Canny e Region Growing riproducono passo per passo il codice C++ di riferimento; per Split and
-            Merge e Otsu multilivello viene usato un equivalente semplificato che ne mostra l'effetto visivo.
+            Il visualizzatore lavora su Lena ridotta a 256×256. Canny, Harris, Hough Lines, Otsu, Otsu 2K e Region
+            Growing riproducono la logica del codice C++ (in Harris un solo cerchio per angolo); Hough Circles e K-means usano le funzioni di OpenCV.js e
+            Split and Merge mostra solo la fase di split. Dopo la prima esecuzione, muovendo i cursori l'output si
+            aggiorna da solo.
           </p>
         </div>
       </div>
