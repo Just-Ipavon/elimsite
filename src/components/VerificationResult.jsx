@@ -20,7 +20,7 @@ const DiagnosticList = ({ title, tone, items, onSelectLine }) => {
             <button
               type="button"
               onClick={() => onSelectLine?.(d.line, d.startColumn)}
-              className="flex w-full items-baseline gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sunken"
+              className="flex min-h-10 w-full items-baseline gap-3 rounded-md px-2 py-2.5 text-left transition-colors hover:bg-sunken lg:min-h-0 lg:py-1.5"
             >
               <span className={`w-11 shrink-0 font-mono text-2xs tabular-nums ${color}`}>r. {d.line}</span>
               <span className="min-w-0 break-words text-[13px] leading-snug text-ink-2">{d.message}</span>
@@ -72,7 +72,7 @@ const VerificationResult = ({
         {!success && missing.length > 0 && (
           <div className="mt-2.5 flex flex-wrap gap-1.5">
             {missing.map((name) => (
-              <code key={name} className="rounded border border-line bg-sunken px-1.5 py-0.5 font-mono text-xs text-ink">
+              <code key={name} className="max-w-full break-all rounded border border-line bg-sunken px-1.5 py-0.5 font-mono text-xs text-ink">
                 {name}()
               </code>
             ))}
@@ -108,13 +108,16 @@ const VerificationResult = ({
             Righe del riferimento non trovate <span className="tabular-nums">· {missingLines.length}</span>
           </SectionLabel>
           {showMissingLines ? (
-            <ul className="divide-y divide-line overflow-hidden rounded-md border border-line bg-sunken">
-              {missingLines.map((line) => (
-                <li key={line}>
-                  <code className="block whitespace-pre-wrap break-words px-2.5 py-1.5 font-mono text-xs text-ink-2">{line}</code>
-                </li>
-              ))}
-            </ul>
+            // Le righe lunghe scorrono dentro il riquadro, non allargano la pagina
+            <div className="overflow-x-auto rounded-md border border-line bg-sunken">
+              <ul className="w-max min-w-full divide-y divide-line">
+                {missingLines.map((line) => (
+                  <li key={line}>
+                    <code className="block whitespace-pre px-2.5 py-1.5 font-mono text-xs text-ink-2">{line}</code>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : (
             <p className="text-[13px] leading-relaxed text-ink-3">
               Controlla i passaggi dell'algoritmo: qualcosa manca o è scritto in modo diverso.

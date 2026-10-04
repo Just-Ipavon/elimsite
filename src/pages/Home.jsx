@@ -33,24 +33,24 @@ const modes = [
 ];
 
 const Home = () => (
-  <div className="mx-auto w-full max-w-page px-4 py-10 md:px-6 md:py-16">
+  <div className="mx-auto w-full max-w-page px-4 py-8 md:px-6 md:py-16">
     {/* Introduzione */}
-    <section className="flex flex-col gap-10 border-b border-line pb-12 md:flex-row md:items-end md:justify-between md:pb-16">
+    <section className="flex flex-col gap-10 border-b border-line pb-10 md:flex-row md:items-end md:justify-between md:pb-16">
       <div className="max-w-2xl">
-        <p className="eyebrow mb-4">Elaborazione delle immagini · OpenCV C++</p>
-        <h1 className="font-display text-[34px] leading-[1.1] tracking-tight text-ink sm:text-5xl">
+        <p className="eyebrow mb-3 sm:mb-4">Elaborazione delle immagini · OpenCV C++</p>
+        <h1 className="font-display text-[30px] leading-[1.12] sm:text-[34px] tracking-tight text-ink sm:text-5xl">
           I {algorithms.length} algoritmi dell&rsquo;esame, da studiare, riscrivere e provare a tempo.
         </h1>
-        <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-ink-2">
+        <p className="mt-4 max-w-xl text-[15px] sm:mt-5 leading-relaxed text-ink-2">
           Per ogni algoritmo trovi l&rsquo;implementazione C++ di riferimento spiegata passo per passo, un editor per
           riscriverla da zero e una simulazione d&rsquo;esame con lo stesso limite di tempo della prova.
         </p>
-        <div className="mt-8 flex flex-wrap items-center gap-2">
-          <Link to="/study" className="btn btn-primary">
+        <div className="mt-7 flex flex-col gap-2 sm:mt-8 sm:flex-row sm:flex-wrap sm:items-center">
+          <Link to="/study" className="btn btn-primary h-10 sm:h-9">
             Inizia dallo studio
             <ArrowRight size={16} aria-hidden="true" />
           </Link>
-          <Link to="/exam" className="btn btn-secondary">
+          <Link to="/exam" className="btn btn-secondary h-10 sm:h-9">
             Simula l&rsquo;esame
           </Link>
         </div>
@@ -70,7 +70,7 @@ const Home = () => (
       </figure>
     </section>
 
-    <div className="grid gap-12 pt-10 md:pt-12 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-16">
+    <div className="grid gap-12 pt-8 md:pt-12 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-16">
       {/* Indice degli algoritmi */}
       <section aria-labelledby="indice">
         <div className="mb-3 flex items-baseline justify-between gap-4">
@@ -140,7 +140,7 @@ const Home = () => (
       </section>
     </div>
 
-    <footer className="mt-16 border-t border-line pt-4 font-mono text-2xs leading-relaxed text-ink-3">
+    <footer className="mt-12 border-t border-line pt-4 md:mt-16 font-mono text-2xs leading-relaxed text-ink-3">
       Il codice C++ non viene compilato: la verifica lo confronta testualmente con l&rsquo;implementazione di
       riferimento. Le anteprime usano OpenCV.js nel browser.
     </footer>
