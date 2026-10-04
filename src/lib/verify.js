@@ -9,12 +9,15 @@ const stripComments = (code) =>
 
 const normalize = (code) => stripComments(code).replace(/\s+/g, '');
 
-// La parte "algoritmica" del riferimento: tutto ciò che sta tra le direttive
-// iniziali e il main (che nello scheletro è diverso da quello di riferimento).
+// La parte "algoritmica" del riferimento: tutto ciò che sta tra l'ultima
+// direttiva `using namespace` (in qualunque ordine) e il main, che nello
+// scheletro è diverso da quello di riferimento.
 const algorithmCore = (reference) => {
-  const start = reference.lastIndexOf('using namespace std;');
-  const end = reference.indexOf('int main');
-  return reference.slice(start === -1 ? 0 : start + 'using namespace std;'.length, end === -1 ? undefined : end);
+  const directives = [...reference.matchAll(/using\s+namespace\s+\w+\s*;/g)];
+  const last = directives.at(-1);
+  const start = last ? last.index + last[0].length : 0;
+  const end = reference.search(/\bint\s+main\s*\(/);
+  return reference.slice(start, end === -1 ? undefined : end);
 };
 
 // Vero se la parentesi aperta in `openIdx - 1` chiude una firma seguita da `{`.
