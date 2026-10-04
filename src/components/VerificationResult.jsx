@@ -1,5 +1,34 @@
 import { AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 
+// Elenco cliccabile di errori o avvisi: il clic porta l'editor sulla riga.
+const DiagnosticList = ({ title, tone, items, onSelectLine }) => {
+  if (!items.length) return null;
+  const Icon = tone === 'red' ? XCircle : AlertTriangle;
+  const color = tone === 'red' ? 'text-dracula-red' : 'text-dracula-yellow';
+  return (
+    <div className="mt-3">
+      <h4 className={`text-xs font-bold flex items-center gap-1 mb-1 ${color}`}>
+        <Icon size={12} aria-hidden="true" />
+        {title} ({items.length})
+      </h4>
+      <ul className="max-h-48 overflow-y-auto space-y-1 pr-1">
+        {items.map((d) => (
+          <li key={`${d.line}:${d.startColumn}:${d.message}`}>
+            <button
+              type="button"
+              onClick={() => onSelectLine?.(d.line, d.startColumn)}
+              className="w-full text-left text-xs rounded px-2 py-1 bg-dracula-bg/60 hover:bg-dracula-bg flex gap-2"
+            >
+              <span className={`font-mono shrink-0 ${color}`}>riga {d.line}</span>
+              <span className="text-dracula-fg/90 break-words min-w-0">{d.message}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
 /**
  * Mostra l'esito di `verifySolution` con punteggio e funzioni mancanti e,
  * se presenti, gli errori trovati da `diagnoseCode`: cliccandone uno
@@ -14,7 +43,8 @@ const VerificationResult = ({
   showMissingLines = false,
 }) => {
   const { score, missing, empty, missingLines = [] } = result;
-  const hasErrors = diagnostics.some((d) => d.severity === 'error');
+  const errorCount = diagnostics.filter((d) => d.severity === 'error').length;
+  const hasErrors = errorCount > 0;
   // Con un errore vero (es. nome sbagliato) il codice non compilerebbe: niente verde.
   const success = result.success && !hasErrors;
   const tone = success ? 'green' : 'red';
@@ -23,7 +53,8 @@ const VerificationResult = ({
   let message;
   if (empty) message = "L'editor è vuoto: scrivi la tua implementazione prima di verificarla.";
   else if (success) message = "Il codice contiene l'implementazione di riferimento completa.";
-  else if (result.success) message = "La parte algoritmica corrisponde al riferimento, ma ci sono errori da correggere:";
+  else if (hasErrors)
+    message = `${errorCount === 1 ? "C'è 1 errore" : `Ci sono ${errorCount} errori`} da correggere (sottolineati in rosso nell'editor).`;
   else if (missing.length > 0) message = 'Mancano alcune chiamate chiave presenti nella soluzione di riferimento:';
   else message = 'Hai usato le funzioni giuste, ma la struttura non corrisponde ancora alla soluzione: ricontrolla i passaggi.';
 
@@ -69,30 +100,18 @@ const VerificationResult = ({
             )}
           </div>
         )}
-        {diagnostics.length > 0 && (
-          <div className="mt-3">
-            <h4 className="text-xs font-bold text-dracula-fg flex items-center gap-1 mb-1">
-              <AlertTriangle size={12} className="text-dracula-orange" aria-hidden="true" />
-              Da controllare ({diagnostics.length}) · sottolineati nell'editor
-            </h4>
-            <ul className="max-h-48 overflow-y-auto space-y-1 pr-1">
-              {diagnostics.map((d) => (
-                <li key={`${d.line}:${d.startColumn}:${d.message}`}>
-                  <button
-                    type="button"
-                    onClick={() => onSelectLine?.(d.line, d.startColumn)}
-                    className="w-full text-left text-xs rounded px-2 py-1 bg-dracula-bg/60 hover:bg-dracula-bg flex gap-2"
-                  >
-                    <span className={`font-mono shrink-0 ${d.severity === 'error' ? 'text-dracula-red' : 'text-dracula-yellow'}`}>
-                      riga {d.line}
-                    </span>
-                    <span className="text-dracula-fg/90 break-words min-w-0">{d.message}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <DiagnosticList
+          title="Errori"
+          tone="red"
+          items={diagnostics.filter((d) => d.severity === 'error')}
+          onSelectLine={onSelectLine}
+        />
+        <DiagnosticList
+          title="Da controllare"
+          tone="yellow"
+          items={diagnostics.filter((d) => d.severity !== 'error')}
+          onSelectLine={onSelectLine}
+        />
         {!empty && (
           <div className="mt-3">
             <div className="flex justify-between text-xs text-dracula-comment mb-1">
