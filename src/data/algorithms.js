@@ -162,12 +162,14 @@ void hysteresis(const Mat &nms, Mat &dst, int lth, int hth) {
         for (int j = 1; j < nms.cols - 1; j++) {
             if (nms.at<uchar>(i, j) >= hth) {
                 dst.at<uchar>(i, j) = 255;
-                for (int u = -1; u <= 1; u++)
+                for (int u = -1; u <= 1; u++) {
                     for (int v = -1; v <= 1; v++) {
                         uchar n = nms.at<uchar>(i + u, j + v);
-                        if (n >= lth && n < hth)
+                        if (n >= lth && n < hth) {
                             dst.at<uchar>(i + u, j + v) = 255;
+                        }
                     }
+                }
             }
         }
     }
