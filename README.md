@@ -1,16 +1,36 @@
-# React + Vite
+# ImageProc – OpenCV C++ Study Hub
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Hub di studio interattivo per gli algoritmi di elaborazione delle immagini in OpenCV C++
+(Canny, Harris, Hough cerchi/rette, K-means, Otsu, Otsu multilivello, Region Growing, Split and Merge).
 
-Currently, two official plugins are available:
+- **Studio** – codice C++ di riferimento con spiegazioni cliccabili e visualizzatore OpenCV.js sull'immagine di Lena.
+- **IDE** – editor Monaco per scrivere la propria implementazione e confrontarla con il riferimento.
+- **Esame** – algoritmo estratto a caso, timer di 90 minuti e nessuna soluzione visibile.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Sviluppo
 
-## React Compiler
+```bash
+npm install
+npm run dev      # server di sviluppo
+npm run lint     # ESLint
+npm run build    # build di produzione in dist/
+npm run deploy   # pubblica dist/ su GitHub Pages
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Il sito è servito sotto `/elimsite/` (vedi `base` in `vite.config.js`) e usa `HashRouter`,
+quindi funziona su GitHub Pages senza configurazioni aggiuntive.
 
-## Expanding the ESLint configuration
+## Struttura
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+| Percorso | Contenuto |
+| --- | --- |
+| `src/data/algorithms.js` | Algoritmi: descrizione, codice di riferimento, scheletro e spiegazioni |
+| `src/lib/opencv.js` | Caricamento di OpenCV.js ed equivalenti visivi degli algoritmi |
+| `src/lib/verify.js` | Confronto tra il codice dello studente e il riferimento |
+| `src/lib/monacoTheme.js` | Tema Dracula e opzioni condivise per l'editor |
+| `src/pages/` | Pagine Home, Studio, IDE ed Esame |
+
+## Note
+
+La verifica del codice è un confronto testuale (commenti e spazi esclusi) con la parte algoritmica
+dell'implementazione di riferimento: il codice C++ non viene compilato né eseguito.

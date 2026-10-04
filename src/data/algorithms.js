@@ -21,7 +21,7 @@ export const algorithms = [
     id: "canny",
     name: "Canny Edge Detector",
     description:
-      "Finds edges in an image using the Canny algorithm. Implementa Gaussiana, Sobel per derivate x e y, calcolo magnitudo e fase, non-maximum suppression.",
+      "Rileva i bordi dell'immagine con l'algoritmo di Canny: smoothing Gaussiano, derivate x e y con Sobel, calcolo di magnitudo e fase, non-maximum suppression e sogliatura con isteresi.",
     explanations: [
       {
         startMatch: "Mat gauss, dx, dy, magnitude, phase;",
@@ -68,10 +68,10 @@ void Canny(const Mat src, Mat &dst) {
             } else if ((angle > -157.5 && angle <= -112.5) || (angle > 22.5 && angle <= 67.5)) {
                 q = magnitude.at<uchar>(y + 1, x - 1);
                 r = magnitude.at<uchar>(y - 1, x + 1);
-            } else if ((angle > -67.5 && angle <= 67.5)) {
+            } else if ((angle > 67.5 && angle <= 112.5) || (angle > -112.5 && angle <= -67.5)) {
                 q = magnitude.at<uchar>(y + 1, x);
                 r = magnitude.at<uchar>(y - 1, x);
-            } else if ((angle > 67.5 && angle <= 112.5) || (angle > -112.5 && angle <= -67.5)) {
+            } else {
                 q = magnitude.at<uchar>(y - 1, x - 1);
                 r = magnitude.at<uchar>(y + 1, x + 1);
             }
@@ -118,7 +118,7 @@ int main( int argc, char** argv ) {
     id: "harris",
     name: "Harris Corner Detection",
     description:
-      "Detects corners usando derivate, smoothing, traccia e determinante della matrice di autocorrelazione per calcolare il response R.",
+      "Rileva gli angoli (corner) usando derivate, smoothing, traccia e determinante della matrice di autocorrelazione per calcolare la risposta R.",
     explanations: [
       {
         startMatch: "Mat Dx, Dy;",
@@ -202,7 +202,7 @@ int main( int argc, char** argv ) {
     id: "hough_circles",
     name: "Hough Circles",
     description:
-      "Detects circles (Hough Transform). Calcola i gradienti con Canny e popola uno spazio dei voti 3D (x, y, raggio).",
+      "Rileva i cerchi con la trasformata di Hough: estrae i bordi con Canny e popola uno spazio dei voti 3D (x, y, raggio).",
     explanations: [
       {
         startMatch: "Canny(src_gray, edges, 100, 112);",
@@ -277,7 +277,7 @@ int main( int argc, char** argv ) {
     id: "hough_lines",
     name: "Hough Lines",
     description:
-      "Rilevamento linee (Hough Transform). Spazio di accumulazione rho-theta per estrarre rette dai bordi (Canny).",
+      "Rileva le rette con la trasformata di Hough: spazio di accumulazione ρ-θ popolato dai pixel di bordo (Canny).",
     explanations: [
       {
         startMatch: "int maxDist = hypot(src.rows, src.cols);",
@@ -286,8 +286,8 @@ int main( int argc, char** argv ) {
         text: "Calcoliamo la massima estensione possibile della retta (la diagonale) per dimensionare l'accumulatore, e filtriamo l'immagine per avere solo i bordi binari.",
       },
       {
-        startMatch: "for(theta = 0; theta <= 180; theta++){",
-        endMatch: "votes[rho][theta]++;",
+        startMatch: "for(theta = 0; theta < 180; theta++){",
+        endMatch: "votes[(int)rho][theta]++;",
         title: "Votazione (ρ e θ)",
         text: "Scorrendo i pixel di bordo (255), iteriamo su tutti i 180 angoli e calcoliamo ρ. Incrementiamo il contatore dei voti nella matrice parametrica (rho, theta) per evidenziare la retta passante per il pixel.",
       },
@@ -295,7 +295,7 @@ int main( int argc, char** argv ) {
         startMatch: "if(votes[i][j] >= 100){",
         endMatch: "line(dst,p1,p2,Scalar(0,0,255),2,LINE_AA);",
         title: "Estrazione Rette",
-        text: "Se una cellula ha più di 100 hit, vuol dire che 100 pixel di bordo appartengono a quella stessa retta polare. Trasformiamo quindi in coordinate Cartesiane (p1, p2) e la disegniamo fissa.",
+        text: "Se una cella ha almeno 100 voti, vuol dire che 100 pixel di bordo appartengono a quella stessa retta polare. Trasformiamo quindi in coordinate Cartesiane (p1, p2) e la disegniamo fissa.",
       },
     ],
     codeReference: `#include <opencv2/opencv.hpp>
@@ -304,19 +304,22 @@ int main( int argc, char** argv ) {
 using namespace cv;
 using namespace std;
 
+#define DEG2RAD CV_PI / 180
+
 void polarToCartesian(double rho, int theta, Point& p1, Point& p2){
-    int x0 = cvRound(rho*cos(theta));
-    int y0 = cvRound(rho*sin(theta));
+    double rad = theta * DEG2RAD;
+    int x0 = cvRound(rho*cos(rad));
+    int y0 = cvRound(rho*sin(rad));
     int alpha = 1000;
-    p1.x = cvRound(x0 + alpha*(-sin(theta)));
-    p1.y = cvRound(y0 + alpha*(cos(theta)));
-    p2.x = cvRound(x0 - alpha*(-sin(theta)));
-    p2.y = cvRound(y0 - alpha*(cos(theta)));
+    p1.x = cvRound(x0 + alpha*(-sin(rad)));
+    p1.y = cvRound(y0 + alpha*(cos(rad)));
+    p2.x = cvRound(x0 - alpha*(-sin(rad)));
+    p2.y = cvRound(y0 - alpha*(cos(rad)));
 }
 
 void houghLines(Mat& src, Mat& dst){
     int maxDist = hypot(src.rows, src.cols);
-    vector<vector<int>> votes(maxDist*2, vector<int>(180, 0));
+    vector<vector<int>> votes(maxDist*2+1, vector<int>(180, 0));
 
     Mat gsrc, edges;
     GaussianBlur(src,gsrc,Size(3,3),0,0);
@@ -327,9 +330,9 @@ void houghLines(Mat& src, Mat& dst){
     for(int x=0; x<edges.rows; x++)
         for(int y=0; y<edges.cols; y++)
             if(edges.at<uchar>(x,y) == 255)
-                for(theta = 0; theta <= 180; theta++){
-                    rho = round(y*cos(theta-90) + x*sin(theta-90)) + maxDist;
-                    votes[rho][theta]++;
+                for(theta = 0; theta < 180; theta++){
+                    rho = round(y*cos((theta-90)*DEG2RAD) + x*sin((theta-90)*DEG2RAD)) + maxDist;
+                    votes[(int)rho][theta]++;
                 }
 
     dst=src.clone();
@@ -490,13 +493,13 @@ int main( int argc, char** argv ) {
     id: "otsu",
     name: "Otsu Thresholding",
     description:
-      "Otsu originale. Calcola istogramma, probabilità cumulate, e massimizza la varianza intraclass per trovare la soglia K ottimale.",
+      "Metodo di Otsu: calcola istogramma e probabilità cumulate, poi massimizza la varianza tra le classi (between-class) per trovare la soglia k* ottimale.",
     explanations: [
       {
         startMatch: "vector<double> normalizedHistogram(Mat& src) {",
         endMatch: "return his;",
         title: "Istogramma Normalizzato (Probabilità)",
-        text: "Conta quanti pixel hanno un certo livello di grigio, dopodichè divide tutto per il numero totale dei pixel. Il risultato è la Probabilità (da 0 a 1) di beccare quel colore nell'immagine.",
+        text: "Conta quanti pixel hanno un certo livello di grigio, dopodiché divide tutto per il numero totale dei pixel. Il risultato è la Probabilità (da 0 a 1) di trovare quel livello nell'immagine.",
       },
       {
         startMatch: "for (int i = 0; i < 256; i++) gMean += i * his[i];",
@@ -772,7 +775,7 @@ int main( int argc, char** argv ) {
         endMatch:
           "root->setMergedB(0); root->setMergedB(1); root->setMergedB(2); root->setMergedB(3); \n\t}\n}",
         title: "Processo di MERGE",
-        text: "Arrivati alla profondità minima del frammento in Split, l'algoritmo risale riunendo in macro-aree le celle adiacenti che mostrano omogeneità strutturale (stddev <= 30), accorpadole nello stesso puntatore d'area Node.",
+        text: "Arrivati alla profondità minima del frammento in Split, l'algoritmo risale riunendo in macro-aree le celle adiacenti che mostrano omogeneità strutturale (stddev <= 30), accorpandole nello stesso puntatore d'area Node.",
       },
       {
         startMatch: "void segment(Mat& src, TNode* root) {",

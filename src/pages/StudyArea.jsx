@@ -1,303 +1,222 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { algorithms } from '../data/algorithms';
-import { Play, Image as ImageIcon } from 'lucide-react';
-import lenaSrc from '../assets/lena.png';
+import { useEffect, useRef, useState } from 'react';
 import Editor from '@monaco-editor/react';
+import { Play, Image as ImageIcon, Lightbulb } from 'lucide-react';
+import { algorithms } from '../data/algorithms';
+import lenaSrc from '../assets/lena.png';
+import { DRACULA_THEME, baseEditorOptions, defineDraculaTheme } from '../lib/monacoTheme';
+import { clearCanvas, runVisualAlgorithm, useOpenCv } from '../lib/opencv';
+
+// Converte startMatch/endMatch delle spiegazioni in intervalli di righe del codice.
+const parseExplanations = (algo) => {
+  const code = algo.codeReference;
+  const lineOf = (index) => code.slice(0, index).split('\n').length;
+
+  return (algo.explanations ?? [])
+    .map((exp) => {
+      const startIndex = code.indexOf(exp.startMatch);
+      if (startIndex === -1) return null;
+      const endIndex = exp.endMatch ? code.indexOf(exp.endMatch, startIndex) : startIndex;
+      const endLine = endIndex === -1
+        ? lineOf(startIndex)
+        : lineOf(endIndex) + (exp.endMatch ? exp.endMatch.split('\n').length - 1 : 0);
+      return { ...exp, startLine: lineOf(startIndex), endLine };
+    })
+    .filter(Boolean);
+};
+
+const engineLabel = { loading: 'Caricamento OpenCV...', ready: 'Esegui', error: 'OpenCV non disponibile' };
 
 const StudyArea = () => {
   const [selectedAlgo, setSelectedAlgo] = useState(algorithms[0]);
-  const [cvReady, setCvReady] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [activeExplanation, setActiveExplanation] = useState(null);
-  
+  const [runError, setRunError] = useState(null);
+  const cvStatus = useOpenCv();
+
   const imgRef = useRef(null);
   const canvasRef = useRef(null);
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
-  const decorationsCollection = useRef(null);
+  const decorationsRef = useRef(null);
+  const explanationsRef = useRef([]);
 
-  useEffect(() => {
-    // Check se OpenCV è caricato e pronto
-    const checkCv = setInterval(() => {
-      if (window.cv && window.cv.Mat) {
-        setCvReady(true);
-        clearInterval(checkCv);
-      }
-    }, 500);
-    return () => clearInterval(checkCv);
-  }, []);
-
-  const updateDecorations = (editor, monaco, algo) => {
-    setActiveExplanation(null);
+  const applyDecorations = (algo) => {
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
     if (!editor || !monaco) return;
 
-    const code = algo.codeReference;
-    const parsedExplanations = (algo.explanations || []).map(exp => {
-      const startIndex = code.indexOf(exp.startMatch);
-      const endIndex = exp.endMatch ? code.indexOf(exp.endMatch) : startIndex;
-      if (startIndex === -1) return null;
-
-      const startLine = code.substring(0, startIndex).split('\n').length;
-      let endLine = code.substring(0, endIndex).split('\n').length;
-      if (exp.endMatch) {
-         endLine += exp.endMatch.split('\n').length - 1;
-      }
-      return { ...exp, startLine, endLine };
-    }).filter(Boolean);
-
-    editor.parsedExplanations = parsedExplanations;
-
-    const decorations = parsedExplanations.map(exp => ({
-      range: new monaco.Range(exp.startLine, 1, exp.endLine, 1),
-      options: {
-        isWholeLine: true,
-        className: 'explanation-highlight',
-      }
-    }));
-
-    if (decorationsCollection.current) {
-        decorationsCollection.current.clear();
-    }
-    decorationsCollection.current = editor.createDecorationsCollection(decorations);
+    explanationsRef.current = parseExplanations(algo);
+    decorationsRef.current?.clear();
+    decorationsRef.current = editor.createDecorationsCollection(
+      explanationsRef.current.map((exp) => ({
+        range: new monaco.Range(exp.startLine, 1, exp.endLine, 1),
+        options: { isWholeLine: true, className: 'explanation-highlight' },
+      })),
+    );
   };
 
   const handleEditorMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
-    
+
     editor.onMouseDown((e) => {
       const line = e.target.position?.lineNumber;
       if (!line) return;
-      
-      const exps = editorRef.current.parsedExplanations || [];
-      const clickedExp = exps.find(exp => line >= exp.startLine && line <= exp.endLine);
-      setActiveExplanation(clickedExp || null);
+      const clicked = explanationsRef.current.find((exp) => line >= exp.startLine && line <= exp.endLine);
+      setActiveExplanation(clicked ?? null);
     });
 
-    monaco.editor.defineTheme('dracula', {
-      base: 'vs-dark',
-      inherit: true,
-      rules: [
-        { background: '282a36' },
-        { token: '', foreground: 'f8f8f2', background: '282a36' },
-      ],
-      colors: {
-        'editor.background': '#282a36',
-        'editor.foreground': '#f8f8f2',
-        'editorLineNumber.foreground': '#6272a4',
-        'editor.selectionBackground': '#44475a',
-        'editor.lineHighlightBackground': '#44475a80',
-      }
-    });
-    monaco.editor.setTheme('dracula');
-    
-    updateDecorations(editor, monaco, selectedAlgo);
+    applyDecorations(selectedAlgo);
   };
 
+  // Le decorazioni vanno ricalcolate dopo che l'editor ha caricato il nuovo codice.
   useEffect(() => {
-    if (editorRef.current && monacoRef.current) {
-        updateDecorations(editorRef.current, monacoRef.current, selectedAlgo);
-    }
+    applyDecorations(selectedAlgo);
   }, [selectedAlgo]);
 
+  const handleAlgoChange = (e) => {
+    setSelectedAlgo(algorithms.find((a) => a.id === e.target.value));
+    setActiveExplanation(null);
+    setRunError(null);
+    clearCanvas(canvasRef.current);
+  };
+
   const runAlgorithm = () => {
-    if (!cvReady || !imgRef.current || !canvasRef.current) return;
+    if (cvStatus !== 'ready' || !imgRef.current || !canvasRef.current) return;
     setProcessing(true);
-    
+    setRunError(null);
+
+    // Lascia al browser il tempo di mostrare lo stato "in esecuzione".
     setTimeout(() => {
       try {
-        const cv = window.cv;
-        let src = cv.imread(imgRef.current);
-        let dst = new cv.Mat();
-        let gray = new cv.Mat();
-        
-        if (selectedAlgo.id !== 'kmeans' && selectedAlgo.id !== 'split_merge') {
-            cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-        }
-
-        switch (selectedAlgo.id) {
-          case 'canny':
-            cv.Canny(gray, dst, 50, 150, 3, false);
-            break;
-          case 'harris':
-            dst = new cv.Mat(src.rows, src.cols, cv.CV_32FC1);
-            cv.cornerHarris(gray, dst, 2, 3, 0.04);
-            cv.normalize(dst, dst, 0, 255, cv.NORM_MINMAX, cv.CV_8U);
-            cv.convertScaleAbs(dst, dst, 1, 0);
-            cv.cvtColor(dst, dst, cv.COLOR_GRAY2RGBA);
-            break;
-          case 'hough_circles':
-            dst = src.clone();
-            let circles = new cv.Mat();
-            cv.HoughCircles(gray, circles, cv.HOUGH_GRADIENT, 1, 45, 75, 40, 0, 0);
-            for (let i = 0; i < circles.cols; ++i) {
-                let x = circles.data32F[i * 3];
-                let y = circles.data32F[i * 3 + 1];
-                let radius = circles.data32F[i * 3 + 2];
-                let center = new cv.Point(x, y);
-                cv.circle(dst, center, radius, [255, 0, 255, 255], 3);
-            }
-            circles.delete();
-            break;
-          case 'hough_lines':
-            dst = src.clone();
-            let edges = new cv.Mat();
-            cv.Canny(gray, edges, 50, 200, 3);
-            let lines = new cv.Mat();
-            cv.HoughLines(edges, lines, 1, Math.PI / 180, 150, 0, 0, 0, Math.PI);
-            for (let i = 0; i < lines.rows; ++i) {
-                let rho = lines.data32F[i * 2];
-                let theta = lines.data32F[i * 2 + 1];
-                let a = Math.cos(theta);
-                let b = Math.sin(theta);
-                let x0 = a * rho;
-                let y0 = b * rho;
-                let pt1 = new cv.Point(x0 + 1000 * (-b), y0 + 1000 * (a));
-                let pt2 = new cv.Point(x0 - 1000 * (-b), y0 - 1000 * (a));
-                cv.line(dst, pt1, pt2, [255, 0, 0, 255], 2);
-            }
-            edges.delete(); lines.delete();
-            break;
-          case 'otsu':
-            cv.threshold(gray, dst, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
-            break;
-          case 'otsu2k':
-            cv.adaptiveThreshold(gray, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
-            break;
-          case 'region_growing':
-            dst = src.clone();
-            let mask = new cv.Mat.zeros(src.rows + 2, src.cols + 2, cv.CV_8U);
-            cv.floodFill(dst, mask, new cv.Point(100, 100), [255, 0, 0, 255], new cv.Rect(), [20, 20, 20, 0], [20, 20, 20, 0], 4 | (255 << 8) | cv.FLOODFILL_FIXED_RANGE);
-            mask.delete();
-            break;
-          case 'kmeans':
-          case 'split_merge':
-            cv.medianBlur(src, dst, 15);
-            break;
-          default:
-            cv.cvtColor(gray, dst, cv.COLOR_GRAY2RGBA);
-        }
-
-        cv.imshow(canvasRef.current, dst);
-        src.delete();
-        dst.delete();
-        gray.delete();
+        runVisualAlgorithm(selectedAlgo.id, imgRef.current, canvasRef.current);
       } catch (err) {
-        console.error("OpenCV execution error:", err);
-        alert("Errore nell'esecuzione di OpenCV.js: " + err);
+        console.error('OpenCV execution error:', err);
+        setRunError(`Errore durante l'esecuzione di OpenCV.js: ${err?.message ?? err}`);
+      } finally {
+        setProcessing(false);
       }
-      setProcessing(false);
-    }, 100);
+    }, 50);
   };
 
   return (
     <div className="w-full max-w-[1920px] mx-auto p-4 md:p-6 md:px-10 pb-10">
       <div className="flex flex-col lg:flex-row gap-6">
-        
-        {/* Left Col - Info */}
+        {/* Colonna sinistra: teoria e codice */}
         <div className="w-full lg:w-2/3 flex flex-col gap-4">
-          <div className="glass p-6 rounded-xl border border-dracula-comment">
-            <h1 className="text-3xl font-bold font-mono text-dracula-cyan mb-2">Algorithm Study</h1>
-            <p className="text-dracula-comment mb-6">Select an algorithm to read the C++ implementation. Test it visually on the right using OpenCV.js.</p>
-            
-            <select 
+          <div className="glass p-6 rounded-xl">
+            <h1 className="text-3xl font-bold font-mono text-dracula-cyan mb-2">Studio degli Algoritmi</h1>
+            <p className="text-dracula-comment mb-6">
+              Scegli un algoritmo per leggerne l'implementazione C++ e provalo visivamente con OpenCV.js.
+            </p>
+
+            <label htmlFor="study-algo" className="sr-only">
+              Algoritmo
+            </label>
+            <select
+              id="study-algo"
               className="w-full bg-dracula-bg text-dracula-fg border border-dracula-comment rounded-lg px-4 py-3 focus:outline-none focus:border-dracula-cyan mb-6"
               value={selectedAlgo.id}
-              onChange={(e) => {
-                setSelectedAlgo(algorithms.find(a => a.id === e.target.value));
-                const ctx = canvasRef.current?.getContext('2d');
-                if (ctx) ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-              }}
+              onChange={handleAlgoChange}
             >
-              {algorithms.map(algo => (
-                <option key={algo.id} value={algo.id}>{algo.name}</option>
+              {algorithms.map((algo) => (
+                <option key={algo.id} value={algo.id}>
+                  {algo.name}
+                </option>
               ))}
             </select>
 
             <h2 className="text-xl font-bold text-dracula-fg mb-2">{selectedAlgo.name}</h2>
-            <p className="text-dracula-comment text-sm mb-6 leading-relaxed">
-              {selectedAlgo.description}
-            </p>
+            <p className="text-dracula-comment text-sm leading-relaxed">{selectedAlgo.description}</p>
 
-            {activeExplanation && (
-              <div className="mt-4 p-5 border-l-4 border-dracula-pink bg-dracula-bg bg-opacity-80 rounded-lg shadow-lg">
-                 <h4 className="font-bold text-dracula-pink mb-2 text-lg">{activeExplanation.title}</h4>
-                 <p className="text-dracula-fg leading-relaxed">{activeExplanation.text}</p>
+            {activeExplanation ? (
+              <div className="mt-6 p-5 border-l-4 border-dracula-pink bg-dracula-bg/80 rounded-lg shadow-lg" aria-live="polite">
+                <h3 className="font-bold text-dracula-pink mb-2 text-lg">{activeExplanation.title}</h3>
+                <p className="text-dracula-fg leading-relaxed">{activeExplanation.text}</p>
               </div>
-            )}
-            {!activeExplanation && selectedAlgo.explanations?.length > 0 && (
-              <div className="mt-4 p-4 border-l-4 border-dracula-cyan bg-dracula-bg bg-opacity-50 rounded-lg">
-                 <p className="text-sm text-dracula-cyan italic flex items-center gap-2">
-                   💡 Clicca sulle zone evidenziate nel codice per esplorarne il funzionamento!
-                 </p>
-              </div>
+            ) : (
+              selectedAlgo.explanations?.length > 0 && (
+                <div className="mt-6 p-4 border-l-4 border-dracula-cyan bg-dracula-bg/50 rounded-lg">
+                  <p className="text-sm text-dracula-cyan italic flex items-center gap-2">
+                    <Lightbulb size={16} aria-hidden="true" />
+                    Clicca sulle zone evidenziate nel codice per scoprirne il funzionamento.
+                  </p>
+                </div>
+              )
             )}
           </div>
 
-          <div className="glass p-6 rounded-xl border border-dracula-comment flex-grow flex flex-col">
-            <h3 className="text-lg font-bold text-dracula-yellow mb-4">C++ Reference Code</h3>
+          <div className="glass p-6 rounded-xl flex-grow flex flex-col">
+            <h3 className="text-lg font-bold text-dracula-yellow mb-4">Codice C++ di riferimento</h3>
             <div className="w-full h-[500px] lg:h-[700px] rounded-lg overflow-hidden border border-dracula-current shadow-inner">
               <Editor
                 height="100%"
-                defaultLanguage="cpp"
-                theme="dracula"
+                language="cpp"
+                theme={DRACULA_THEME}
                 value={selectedAlgo.codeReference}
+                beforeMount={defineDraculaTheme}
                 onMount={handleEditorMount}
                 options={{
+                  ...baseEditorOptions,
                   readOnly: true,
-                  minimap: { enabled: false },
                   wordWrap: 'on',
-                  fontSize: 14,
-                  scrollBeyondLastLine: false,
-                  padding: { top: 16, bottom: 16 }
+                  padding: { top: 16, bottom: 16 },
                 }}
               />
             </div>
           </div>
         </div>
 
-        {/* Right Col - Visual Testing */}
-        <div className="w-full lg:w-1/3 glass p-6 rounded-xl border border-dracula-comment flex flex-col items-center">
-            <div className="w-full flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-dracula-fg flex items-center gap-2">
-                <ImageIcon className="text-dracula-green" /> Visualizer
-              </h2>
-              <button 
-                onClick={runAlgorithm}
-                disabled={!cvReady || processing}
-                className="flex items-center space-x-2 bg-dracula-green text-dracula-bg px-5 py-2 rounded-lg font-bold hover:bg-opacity-80 transition-colors disabled:opacity-50"
-              >
-                <Play size={16} fill="currentColor" />
-                <span>{processing ? 'Processing...' : (cvReady ? 'Run Algo' : 'Loading Engine...')}</span>
-              </button>
-            </div>
+        {/* Colonna destra: visualizzatore */}
+        <div className="w-full lg:w-1/3 lg:self-start lg:sticky lg:top-20 glass p-6 rounded-xl flex flex-col items-center">
+          <div className="w-full flex justify-between items-center gap-4 mb-6">
+            <h2 className="text-xl font-bold text-dracula-fg flex items-center gap-2">
+              <ImageIcon className="text-dracula-green" aria-hidden="true" /> Visualizzatore
+            </h2>
+            <button
+              type="button"
+              onClick={runAlgorithm}
+              disabled={cvStatus !== 'ready' || processing}
+              className="flex items-center space-x-2 bg-dracula-green text-dracula-bg px-5 py-2 rounded-lg font-bold hover:bg-opacity-80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Play size={16} fill="currentColor" aria-hidden="true" />
+              <span>{processing ? 'Elaborazione...' : engineLabel[cvStatus]}</span>
+            </button>
+          </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-6 w-full">
-               <div className="flex flex-col items-center">
-                 <h4 className="text-sm font-semibold text-dracula-comment mb-2">Source (Lena)</h4>
-                 <div className="bg-dracula-bg border-2 border-dashed border-dracula-current p-1 rounded-lg w-full max-w-[256px]">
-                    <img 
-                      ref={imgRef}
-                      src={lenaSrc} 
-                      alt="Source Lena" 
-                      className="w-full h-auto rounded"
-                    />
-                 </div>
-               </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-6 w-full">
+            <figure className="flex flex-col items-center">
+              <figcaption className="text-sm font-semibold text-dracula-comment mb-2">Sorgente (Lena)</figcaption>
+              <div className="bg-dracula-bg border-2 border-dashed border-dracula-current p-1 rounded-lg w-full max-w-[256px]">
+                <img ref={imgRef} src={lenaSrc} alt="Immagine sorgente: Lena" className="w-full h-auto rounded" />
+              </div>
+            </figure>
 
-               <div className="flex flex-col items-center">
-                 <h4 className="text-sm font-semibold text-dracula-comment mb-2">Output</h4>
-                 <div className="bg-dracula-bg border-2 border-solid border-dracula-purple p-1 rounded-lg w-full max-w-[256px] min-h-[256px] flex items-center justify-center">
-                    <canvas ref={canvasRef} className="w-full h-auto rounded max-w-full" />
-                 </div>
-               </div>
-            </div>
-            
-            <p className="text-xs text-dracula-comment mt-8 text-center max-w-sm">
-              Visualizer uses OpenCV.js to emulate the C++ algorithms inside the browser. For complex recursive or native algorithms (like Region Growing, K-means), a simplified JS equivalent is used to demonstrate the visual effect.
+            <figure className="flex flex-col items-center">
+              <figcaption className="text-sm font-semibold text-dracula-comment mb-2">Output</figcaption>
+              <div className="bg-dracula-bg border-2 border-solid border-dracula-purple p-1 rounded-lg w-full max-w-[256px] aspect-square flex items-center justify-center">
+                <canvas ref={canvasRef} className="w-full h-auto rounded max-w-full" />
+              </div>
+            </figure>
+          </div>
+
+          {runError && (
+            <p role="alert" className="mt-6 text-sm text-dracula-red text-center">
+              {runError}
             </p>
-        </div>
+          )}
+          {cvStatus === 'error' && (
+            <p role="alert" className="mt-6 text-sm text-dracula-red text-center">
+              Impossibile caricare OpenCV.js: controlla la connessione e ricarica la pagina.
+            </p>
+          )}
 
+          <p className="text-xs text-dracula-comment mt-8 text-center max-w-sm">
+            Il visualizzatore usa le funzioni native di OpenCV.js per emulare il risultato degli algoritmi C++ nel
+            browser. Per gli algoritmi più complessi (Region Growing, Split and Merge, Otsu multilivello) viene usato
+            un equivalente semplificato che ne mostra l'effetto visivo.
+          </p>
+        </div>
       </div>
     </div>
   );

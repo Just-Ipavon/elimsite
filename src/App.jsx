@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import StudyArea from './pages/StudyArea';
@@ -15,6 +15,7 @@ function App() {
           <Route path="/study" element={<StudyArea />} />
           <Route path="/ide" element={<IdeArea />} />
           <Route path="/exam" element={<ExamArea />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
     </div>
