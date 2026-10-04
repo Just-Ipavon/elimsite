@@ -201,17 +201,17 @@ const checkMain = (clean, reference) => {
   const lineOf = (offset) => clean.slice(0, mainIndex + offset).split('\n').length;
   const diagnostics = [];
 
-  const imread = main.match(/imread\s*\(([^;]*)\)\s*;/);
-  if (imread && /IMREAD_GRAYSCALE/.test(refMain) && !/IMREAD_GRAYSCALE|IMREAD_REDUCED_GRAYSCALE|,\s*0\s*\)?\s*$/.test(imread[1])) {
-    const line = lineOf(imread.index);
-    const raw = clean.split('\n')[line - 1];
-    const col = raw.indexOf('imread') + 1;
+  const imread = main.match(/imread\s*(\(([^;]*)\))\s*;/);
+  if (imread && /IMREAD_GRAYSCALE/.test(refMain) && !/IMREAD_GRAYSCALE|IMREAD_REDUCED_GRAYSCALE|,\s*0\s*$/.test(imread[2])) {
+    // Si sottolinea la parentesi degli argomenti: è lì che manca IMREAD_GRAYSCALE.
+    const argsOffset = imread.index + imread[0].indexOf(imread[1]);
+    const { line, column } = position(clean, mainIndex + argsOffset);
     diagnostics.push({
       severity: 'error',
       line,
-      startColumn: col,
-      endColumn: col + 6,
-      message: "L'algoritmo lavora su un solo canale: leggi l'immagine in scala di grigi con `imread(argv[1], IMREAD_GRAYSCALE)`.",
+      startColumn: column,
+      endColumn: column + imread[1].split('\n')[0].length,
+      message: "Manca `IMREAD_GRAYSCALE`: l'algoritmo lavora su un solo canale, scrivi `imread(argv[1], IMREAD_GRAYSCALE)`.",
     });
   }
 
