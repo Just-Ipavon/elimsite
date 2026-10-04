@@ -20,6 +20,26 @@ export const algorithms = [
   {
     id: "canny",
     name: "Canny Edge Detector",
+    params: [
+      {
+        key: "low",
+        label: "Soglia bassa (lth)",
+        min: 0,
+        max: 255,
+        step: 1,
+        default: 30,
+        code: "myCanny(src, dst, 30, 90);",
+      },
+      {
+        key: "high",
+        label: "Soglia alta (hth)",
+        min: 0,
+        max: 255,
+        step: 1,
+        default: 90,
+        code: "myCanny(src, dst, 30, 90);",
+      },
+    ],
     description:
       "Canny trova bordi sottili (larghi un pixel) e poco sensibili al rumore. Per ricordarlo bastano 5 parole: blur, Sobel, modulo/fase, NMS, isteresi. Il codice è diviso in tre funzioni: myCanny esegue la pipeline, nonMaxSuppression assottiglia i bordi, hysteresis decide quali tenere con due soglie.",
     steps: [
@@ -181,6 +201,26 @@ int main(int argc, char** argv) {
   {
     id: "harris",
     name: "Harris Corner Detection",
+    params: [
+      {
+        key: "k",
+        label: "k (sensibilità)",
+        min: 0.01,
+        max: 0.2,
+        step: 0.01,
+        default: 0.04,
+        code: "R = det - 0.04f * trace2;",
+      },
+      {
+        key: "threshold",
+        label: "Soglia su R normalizzata",
+        min: 0,
+        max: 255,
+        step: 1,
+        default: 100,
+        code: "if ((int)src.at<float>(i, j) > 100)",
+      },
+    ],
     description:
       "Harris individua gli angoli (corner): punti in cui l'intensità cambia molto spostando una piccola finestra in qualunque direzione. Su una zona piatta non cambia nulla, lungo un bordo cambia solo attraversandolo, su un angolo cambia in tutte le direzioni. Questo comportamento è riassunto dalla matrice di struttura M e dalla risposta R = det(M) − k·trace(M)².",
     steps: [
@@ -299,6 +339,36 @@ int main( int argc, char** argv ) {
   {
     id: "hough_circles",
     name: "Hough Circles",
+    params: [
+      {
+        key: "votes",
+        label: "Voti minimi (accumulatore)",
+        min: 10,
+        max: 100,
+        step: 1,
+        default: 30,
+        code: "if (votes.at<float>(i,j,radius-minRadius) >= 123)",
+        note: "Il visualizzatore usa cv.HoughCircles, che conta i voti in modo diverso: valori più bassi del 123 del codice C++.",
+      },
+      {
+        key: "minRadius",
+        label: "Raggio minimo",
+        min: 1,
+        max: 60,
+        step: 1,
+        default: 10,
+        code: "const int minRadius = 22;",
+      },
+      {
+        key: "maxRadius",
+        label: "Raggio massimo",
+        min: 5,
+        max: 120,
+        step: 1,
+        default: 40,
+        code: "const int maxRadius = 25;",
+      },
+    ],
     description:
       "La trasformata di Hough per i cerchi cerca cerchi di raggio noto (qui da 22 a 24 pixel). Ogni pixel di bordo «vota» tutti i possibili centri da cui potrebbe provenire; i veri centri accumulano molti voti perché ricevono il voto da tutti i punti della propria circonferenza.",
     steps: [
@@ -402,6 +472,35 @@ int main( int argc, char** argv ) {
   {
     id: "hough_lines",
     name: "Hough Lines",
+    params: [
+      {
+        key: "votes",
+        label: "Voti minimi per una retta",
+        min: 20,
+        max: 200,
+        step: 1,
+        default: 100,
+        code: "if(votes[i][j] >= 100){",
+      },
+      {
+        key: "cannyLow",
+        label: "Canny: soglia bassa",
+        min: 0,
+        max: 255,
+        step: 1,
+        default: 50,
+        code: "Canny(gsrc,edges,50,150);",
+      },
+      {
+        key: "cannyHigh",
+        label: "Canny: soglia alta",
+        min: 0,
+        max: 255,
+        step: 1,
+        default: 150,
+        code: "Canny(gsrc,edges,50,150);",
+      },
+    ],
     description:
       "La trasformata di Hough per le rette rappresenta ogni retta in forma polare ρ = x·cos θ + y·sin θ, dove ρ è la distanza dall'origine e θ l'angolo della normale. Ogni pixel di bordo vota tutte le rette (ρ, θ) che passano per lui; le rette vere raccolgono i voti di tutti i loro pixel.",
     steps: [
@@ -512,6 +611,17 @@ int main( int argc, char** argv ) {
   {
     id: "kmeans",
     name: "K-means Clustering",
+    params: [
+      {
+        key: "k",
+        label: "Numero di cluster k",
+        min: 2,
+        max: 12,
+        step: 1,
+        default: 6,
+        code: "const int k = 6;",
+      },
+    ],
     description:
       "K-means divide i pixel in k = 6 gruppi (cluster) di colore simile. Ogni cluster è rappresentato da un centro (un colore BGR); l'algoritmo alterna assegnazione dei pixel al centro più vicino e ricalcolo dei centri come media, finché i centri smettono di muoversi in modo significativo.",
     steps: [
@@ -890,6 +1000,26 @@ int main( int argc, char** argv ) {
   {
     id: "region_growing",
     name: "Region Growing",
+    params: [
+      {
+        key: "threshold",
+        label: "Soglia (distanza²)",
+        min: 10,
+        max: 2000,
+        step: 10,
+        default: 204,
+        code: "const int th = 204;",
+      },
+      {
+        key: "minArea",
+        label: "Area minima regione (%)",
+        min: 0,
+        max: 10,
+        step: 0.5,
+        default: 1,
+        code: "const int minRegionArea = int(src.rows * src.cols * 0.01f);",
+      },
+    ],
     description:
       "Il region growing segmenta l'immagine facendo «crescere» regioni a partire da un pixel seme: un vicino viene aggiunto alla regione se il suo colore è abbastanza simile a quello del pixel da cui lo si raggiunge. L'immagine viene scandita tutta, quindi ogni pixel finisce in una regione; le regioni troppo piccole sono considerate rumore.",
     steps: [
@@ -1012,6 +1142,17 @@ int main( int argc, char** argv ) {
   {
     id: "split_merge",
     name: "Split and Merge",
+    params: [
+      {
+        key: "stddev",
+        label: "Soglia deviazione standard",
+        min: 5,
+        max: 100,
+        step: 1,
+        default: 30,
+        code: "if ( R.width > 4 && root->getStddev() > 30 ) {",
+      },
+    ],
     description:
       "Split and Merge divide ricorsivamente l'immagine in quadranti finché ogni blocco è omogeneo (fase di split, che costruisce un QuadTree), poi riunisce i blocchi vicini omogenei (fase di merge) e colora ogni regione con il suo colore medio.",
     steps: [

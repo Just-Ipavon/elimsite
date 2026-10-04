@@ -80,9 +80,3 @@ export const verifySolution = (code, reference) => {
 
   return { success: coreNorm.length > 0 && userNorm.includes(coreNorm), score, missing };
 };
-
-/** Firme delle funzioni globali definite nel riferimento (escluso il main). */
-export const functionSignatures = (reference) =>
-  [...algorithmCore(reference).matchAll(/^([A-Za-z_][\w<>,:*& ]*?[\w>*&]\s+[*&]?\w+\s*\([^)]*\))\s*\{/gm)]
-    .map(([, signature]) => signature.trim())
-    .filter((signature) => !/^(if|for|while|switch|else)\b/.test(signature));
