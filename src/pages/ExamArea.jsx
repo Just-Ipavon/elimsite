@@ -1,318 +1,210 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Editor from '@monaco-editor/react';
-import { Play, CheckCircle, XCircle, Clock, Image as ImageIcon } from 'lucide-react';
+import { Play, XCircle, Clock, Image as ImageIcon, Shuffle } from 'lucide-react';
 import { algorithms } from '../data/algorithms';
 import lenaSrc from '../assets/lena.png';
+import { DRACULA_THEME, baseEditorOptions, defineDraculaTheme } from '../lib/monacoTheme';
+import { clearCanvas, runVisualAlgorithm, useOpenCv } from '../lib/opencv';
+import { verifySolution } from '../lib/verify';
+import VerificationResult from '../components/VerificationResult';
+
+const EXAM_DURATION_S = 90 * 60;
+const WARNING_THRESHOLD_S = 5 * 60;
+
+const pickRandomAlgo = (excludeId) => {
+  const pool = algorithms.length > 1 ? algorithms.filter((a) => a.id !== excludeId) : algorithms;
+  return pool[Math.floor(Math.random() * pool.length)];
+};
+
+const formatTime = (totalSeconds) => {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  return [h, m, s].map((n) => String(n).padStart(2, '0')).join(':');
+};
 
 const ExamArea = () => {
-  const [selectedAlgo, setSelectedAlgo] = useState(null);
-  const [code, setCode] = useState('');
+  const [selectedAlgo, setSelectedAlgo] = useState(() => pickRandomAlgo());
+  const [code, setCode] = useState(() => selectedAlgo.cppSkeleton);
   const [verificationResult, setVerificationResult] = useState(null);
-  const [timeLeft, setTimeLeft] = useState(90 * 60); // 1.5 hours in seconds
-  
-  const [cvReady, setCvReady] = useState(false);
+  const [deadline, setDeadline] = useState(() => Date.now() + EXAM_DURATION_S * 1000);
+  const [timeLeft, setTimeLeft] = useState(EXAM_DURATION_S);
   const [processing, setProcessing] = useState(false);
+  const cvStatus = useOpenCv();
+
   const imgRef = useRef(null);
   const canvasRef = useRef(null);
 
+  // Il tempo residuo è calcolato dalla scadenza assoluta, così non "deriva"
+  // se il tab resta in background e i timer vengono rallentati.
   useEffect(() => {
-    // Pick random algorithm on mount
-    const randomAlgo = algorithms[Math.floor(Math.random() * algorithms.length)];
-    setSelectedAlgo(randomAlgo);
-    setCode(randomAlgo.cppSkeleton);
-
-    const checkCv = setInterval(() => {
-      if (window.cv && window.cv.Mat) {
-        setCvReady(true);
-        clearInterval(checkCv);
-      }
-    }, 500);
-
-    const timer = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => {
-      clearInterval(timer);
-      clearInterval(checkCv);
+    const tick = () => {
+      const remaining = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+      setTimeLeft(remaining);
+      if (remaining === 0) clearInterval(timer);
     };
-  }, []);
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [deadline]);
 
-  const handleEditorWillMount = (monaco) => {
-    monaco.editor.defineTheme('dracula', {
-      base: 'vs-dark',
-      inherit: true,
-      rules: [
-        { background: '282a36', token: '' },
-        { foreground: 'f1fa8c', token: 'string' },
-        { foreground: 'ff79c6', token: 'keyword' },
-        { foreground: '8be9fd', token: 'type' },
-        { foreground: '50fa7b', token: 'number' },
-        { foreground: 'bd93f9', token: 'constant' },
-        { foreground: '6272a4', token: 'comment' },
-      ],
-      colors: {
-        'editor.background': '#282a36',
-        'editor.foreground': '#f8f8f2',
-        'editor.lineHighlightBackground': '#44475a',
-        'editorLineNumber.foreground': '#6272a4',
-      }
-    });
+  const timeUp = timeLeft === 0;
+
+  const newExam = () => {
+    const algo = pickRandomAlgo(selectedAlgo.id);
+    setSelectedAlgo(algo);
+    setCode(algo.cppSkeleton);
+    setVerificationResult(null);
+    setDeadline(Date.now() + EXAM_DURATION_S * 1000);
+    setTimeLeft(EXAM_DURATION_S);
+    clearCanvas(canvasRef.current);
   };
 
-  const verifyCode = () => {
-    if (!selectedAlgo) return;
-    const userClean = code.replace(/\s+/g, '');
-    const refClean = selectedAlgo.codeReference.replace(/\s+/g, '');
-    
-    if (userClean.includes(refClean) || refClean.includes(userClean)) {
-      setVerificationResult({ success: true, message: 'Esatto! Il codice corrisponde perfettamente.' });
-    } else {
-      const requiredMethods = selectedAlgo.codeReference.match(/cv::[a-zA-Z]+/g) || [];
-      const uniqueMethods = [...new Set(requiredMethods)];
-      const missingMethods = uniqueMethods.filter(method => !code.includes(method));
-      
-      if (missingMethods.length > 0) {
-        setVerificationResult({ 
-          success: false, 
-          message: `Codice non corretto. Ti mancano o stai sbagliando alcuni metodi chiave di OpenCV: ${missingMethods.join(', ')}` 
-        });
-      } else {
-        setVerificationResult({ 
-          success: false, 
-          message: 'Hai usato i metodi giusti ma la struttura non corrisponde alla soluzione esatta.' 
-        });
-      }
-    }
-  };
+  const verifyCode = () => setVerificationResult(verifySolution(code, selectedAlgo.codeReference));
 
   const runVisualizer = () => {
-    if (!cvReady || !imgRef.current || !canvasRef.current || !selectedAlgo) return;
+    if (cvStatus !== 'ready' || !imgRef.current || !canvasRef.current) return;
     setProcessing(true);
-    
     setTimeout(() => {
       try {
-        const cv = window.cv;
-        let src = cv.imread(imgRef.current);
-        let dst = new cv.Mat();
-        let gray = new cv.Mat();
-        
-        if (selectedAlgo.id !== 'kmeans' && selectedAlgo.id !== 'split_merge') {
-            cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-        }
-
-        switch (selectedAlgo.id) {
-          case 'canny':
-            cv.Canny(gray, dst, 50, 150, 3, false);
-            break;
-          case 'harris':
-            dst = new cv.Mat(src.rows, src.cols, cv.CV_32FC1);
-            cv.cornerHarris(gray, dst, 2, 3, 0.04);
-            cv.normalize(dst, dst, 0, 255, cv.NORM_MINMAX, cv.CV_8U);
-            cv.convertScaleAbs(dst, dst, 1, 0);
-            cv.cvtColor(dst, dst, cv.COLOR_GRAY2RGBA);
-            break;
-          case 'hough_circles':
-            dst = src.clone();
-            let circles = new cv.Mat();
-            cv.HoughCircles(gray, circles, cv.HOUGH_GRADIENT, 1, 45, 75, 40, 0, 0);
-            for (let i = 0; i < circles.cols; ++i) {
-                let x = circles.data32F[i * 3];
-                let y = circles.data32F[i * 3 + 1];
-                let radius = circles.data32F[i * 3 + 2];
-                let center = new cv.Point(x, y);
-                cv.circle(dst, center, radius, [255, 0, 255, 255], 3);
-            }
-            circles.delete();
-            break;
-          case 'hough_lines':
-            dst = src.clone();
-            let edges = new cv.Mat();
-            cv.Canny(gray, edges, 50, 200, 3);
-            let lines = new cv.Mat();
-            cv.HoughLines(edges, lines, 1, Math.PI / 180, 150, 0, 0, 0, Math.PI);
-            for (let i = 0; i < lines.rows; ++i) {
-                let rho = lines.data32F[i * 2];
-                let theta = lines.data32F[i * 2 + 1];
-                let a = Math.cos(theta);
-                let b = Math.sin(theta);
-                let x0 = a * rho;
-                let y0 = b * rho;
-                let pt1 = new cv.Point(x0 + 1000 * (-b), y0 + 1000 * (a));
-                let pt2 = new cv.Point(x0 - 1000 * (-b), y0 - 1000 * (a));
-                cv.line(dst, pt1, pt2, [255, 0, 0, 255], 2);
-            }
-            edges.delete(); lines.delete();
-            break;
-          case 'otsu':
-            cv.threshold(gray, dst, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
-            break;
-          case 'otsu2k':
-            cv.adaptiveThreshold(gray, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
-            break;
-          case 'region_growing':
-            dst = src.clone();
-            let mask = new cv.Mat.zeros(src.rows + 2, src.cols + 2, cv.CV_8U);
-            cv.floodFill(dst, mask, new cv.Point(100, 100), [255, 0, 0, 255], new cv.Rect(), [20, 20, 20, 0], [20, 20, 20, 0], 4 | (255 << 8) | cv.FLOODFILL_FIXED_RANGE);
-            mask.delete();
-            break;
-          case 'kmeans':
-          case 'split_merge':
-            cv.medianBlur(src, dst, 15);
-            break;
-          default:
-            cv.cvtColor(gray, dst, cv.COLOR_GRAY2RGBA);
-        }
-
-        cv.imshow(canvasRef.current, dst);
-        src.delete();
-        dst.delete();
-        gray.delete();
+        runVisualAlgorithm(selectedAlgo.id, imgRef.current, canvasRef.current);
       } catch (err) {
-        console.error("OpenCV execution error:", err);
+        console.error('OpenCV execution error:', err);
+      } finally {
+        setProcessing(false);
       }
-      setProcessing(false);
-    }, 100);
+    }, 50);
   };
-
-  const formatTime = (seconds) => {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
-
-  if (!selectedAlgo) return <div className="p-10 text-center text-dracula-fg">Caricamento Esame...</div>;
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col p-4 md:p-6 pb-0 overflow-hidden">
-      <div className="flex justify-between items-center mb-4">
+    <div className="lg:h-[calc(100vh-4rem)] flex flex-col p-4 md:p-6">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-4">
         <div>
-          <h1 className="text-2xl font-bold font-mono text-dracula-cyan flex items-center gap-3">
-            Esame (Senza Soluzioni)
-            <span className={`text-lg bg-dracula-current px-3 py-1 rounded flex items-center gap-2 ${timeLeft < 300 ? 'text-dracula-red animate-pulse' : 'text-dracula-fg'}`}>
-              <Clock size={16} /> {formatTime(timeLeft)}
+          <h1 className="text-2xl font-bold font-mono text-dracula-cyan flex flex-wrap items-center gap-3">
+            Esame (senza soluzioni)
+            <span
+              role="timer"
+              aria-label="Tempo rimanente"
+              className={`text-lg bg-dracula-current px-3 py-1 rounded flex items-center gap-2 ${
+                timeLeft < WARNING_THRESHOLD_S ? 'text-dracula-red animate-pulse' : 'text-dracula-fg'
+              }`}
+            >
+              <Clock size={16} aria-hidden="true" /> {formatTime(timeLeft)}
             </span>
           </h1>
           <p className="text-lg mt-2 text-dracula-fg border-l-4 border-dracula-cyan pl-3">
             Algoritmo estratto: <span className="font-bold text-dracula-pink">{selectedAlgo.name}</span>
           </p>
         </div>
-        
-        <div className="flex space-x-4 items-center">
-          <button 
-            onClick={verifyCode}
-            disabled={timeLeft === 0}
-            className="flex items-center space-x-2 bg-dracula-cyan text-dracula-bg px-6 py-2 rounded font-bold hover:bg-opacity-80 transition-colors disabled:opacity-50"
+
+        <div className="flex flex-wrap gap-3 items-center">
+          <button
+            type="button"
+            onClick={newExam}
+            className="flex items-center space-x-2 border border-dracula-comment text-dracula-fg px-4 py-2 rounded hover:border-dracula-cyan hover:text-dracula-cyan transition-colors"
           >
-            <Play size={16} />
-            <span>Invia Codice</span>
+            <Shuffle size={16} aria-hidden="true" />
+            <span>Nuovo esame</span>
+          </button>
+          <button
+            type="button"
+            onClick={verifyCode}
+            disabled={timeUp}
+            className="flex items-center space-x-2 bg-dracula-cyan text-dracula-bg px-6 py-2 rounded font-bold hover:bg-opacity-80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Play size={16} aria-hidden="true" />
+            <span>Consegna</span>
           </button>
         </div>
       </div>
 
-      <div className="flex-grow flex flex-col md:flex-row gap-4 mb-4 min-h-0">
-        
-        {/* Left Col - Editor */}
-        <div className="w-full md:w-1/2 flex flex-col h-full border rounded-lg overflow-hidden border-dracula-cyan relative">
-          <div className="absolute top-2 right-2 z-10 bg-dracula-current px-3 py-1 rounded text-xs text-dracula-comment border border-dracula-comment">
-            Scrivi il tuo codice C++ qui
+      <div className="flex-grow flex flex-col lg:flex-row gap-4 min-h-0">
+        {/* Colonna sinistra: editor */}
+        <div className="w-full lg:w-1/2 h-[60vh] lg:h-full flex flex-col border rounded-lg overflow-hidden border-dracula-cyan relative">
+          <div className="absolute top-2 right-4 z-10 bg-dracula-current px-3 py-1 rounded text-xs text-dracula-comment border border-dracula-comment pointer-events-none">
+            {timeUp ? 'Tempo scaduto: editor in sola lettura' : 'Scrivi qui il tuo codice C++'}
           </div>
           <Editor
             height="100%"
-            defaultLanguage="cpp"
+            language="cpp"
             value={code}
-            onChange={setCode}
-            beforeMount={handleEditorWillMount}
-            theme="dracula"
-            options={{
-              minimap: { enabled: false },
-              fontSize: 15,
-              fontFamily: "'Fira Code', 'Monaco', monospace",
-              fontLigatures: true,
-              scrollBeyondLastLine: false,
-              padding: { top: 32 },
-              readOnly: timeLeft === 0
-            }}
+            onChange={(value) => setCode(value ?? '')}
+            beforeMount={defineDraculaTheme}
+            theme={DRACULA_THEME}
+            options={{ ...baseEditorOptions, fontSize: 15, padding: { top: 40 }, readOnly: timeUp }}
           />
         </div>
-        
-        {/* Right Col - Visualizer / Output */}
-        <div className="w-full md:w-1/2 flex flex-col h-full gap-4 overflow-y-auto pr-2">
-          
-          {/* Verification Box */}
+
+        {/* Colonna destra: esito e visualizzatore */}
+        <div className="w-full lg:w-1/2 flex flex-col lg:h-full gap-4 lg:overflow-y-auto lg:pr-2">
           <div className="glass rounded-lg p-4 flex flex-col shrink-0">
-            <h2 className="text-lg font-bold text-dracula-cyan mb-2 border-b border-dracula-comment pb-2">Esito Verifica</h2>
-            
-            {timeLeft === 0 && !verificationResult && (
-               <div className="mt-4 p-4 rounded-md border flex items-start space-x-3 bg-dracula-red bg-opacity-10 border-dracula-red">
-                <div className="mt-1"><XCircle className="text-dracula-red" size={20} /></div>
+            <h2 className="text-lg font-bold text-dracula-cyan mb-2 border-b border-dracula-comment pb-2">
+              Esito verifica
+            </h2>
+
+            {timeUp && !verificationResult && (
+              <div role="alert" className="mt-4 p-4 rounded-md border flex items-start space-x-3 bg-dracula-red/10 border-dracula-red">
+                <XCircle className="mt-1 shrink-0 text-dracula-red" size={20} aria-hidden="true" />
                 <div>
-                  <h3 className="font-bold text-dracula-red">Tempo Scaduto</h3>
-                  <p className="text-sm mt-1">Non hai effettuato la consegna in tempo.</p>
+                  <h3 className="font-bold text-dracula-red">Tempo scaduto</h3>
+                  <p className="text-sm mt-1">Non hai consegnato in tempo. Avvia un nuovo esame per riprovare.</p>
                 </div>
               </div>
             )}
 
             {verificationResult ? (
-              <div className={`mt-2 p-4 rounded-md border flex items-start space-x-3 ${verificationResult.success ? 'bg-dracula-green bg-opacity-10 border-dracula-green' : 'bg-dracula-red bg-opacity-10 border-dracula-red'}`}>
-                <div className="mt-1">
-                  {verificationResult.success ? <CheckCircle className="text-dracula-green" size={20} /> : <XCircle className="text-dracula-red" size={20} />}
-                </div>
-                <div>
-                  <h3 className={`font-bold ${verificationResult.success ? 'text-dracula-green' : 'text-dracula-red'}`}>
-                    {verificationResult.success ? 'Esame Superato!' : 'Verifica Fallita'}
-                  </h3>
-                  <p className="text-sm mt-1">{verificationResult.message}</p>
-                </div>
-              </div>
+              <VerificationResult
+                result={verificationResult}
+                successTitle="Esame superato!"
+                failureTitle="Verifica fallita"
+              />
             ) : (
-              <p className="text-dracula-comment text-sm mt-2">{timeLeft > 0 ? "Scrivi la tua implementazione per l'algoritmo estratto e clicca su Invia Codice." : ""}</p>
+              !timeUp && (
+                <p className="text-dracula-comment text-sm mt-2">
+                  Scrivi la tua implementazione dell'algoritmo estratto e premi Consegna.
+                </p>
+              )
             )}
           </div>
 
-          {/* Visualizer Box */}
           <div className="glass rounded-lg p-4 flex flex-col shrink-0">
-            <div className="w-full flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold text-dracula-fg flex items-center gap-2 border-b border-dracula-comment pb-2 w-full">
-                <ImageIcon className="text-dracula-green" size={20} /> Obiettivo Visivo
-                <button 
-                  onClick={runVisualizer}
-                  disabled={!cvReady || processing}
-                  className="ml-auto text-xs flex items-center space-x-2 bg-dracula-green text-dracula-bg px-3 py-1 rounded hover:bg-opacity-80 disabled:opacity-50"
-                >
-                  <Play size={12} fill="currentColor" />
-                  <span>{processing ? '...' : 'Vedi Soluzione Visiva'}</span>
-                </button>
+            <div className="flex flex-wrap items-center gap-2 border-b border-dracula-comment pb-2 mb-4">
+              <h2 className="text-lg font-bold text-dracula-fg flex items-center gap-2">
+                <ImageIcon className="text-dracula-green" size={20} aria-hidden="true" /> Obiettivo visivo
               </h2>
+              <button
+                type="button"
+                onClick={runVisualizer}
+                disabled={cvStatus !== 'ready' || processing}
+                className="ml-auto text-xs flex items-center space-x-2 bg-dracula-green text-dracula-bg px-3 py-1 rounded hover:bg-opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Play size={12} fill="currentColor" aria-hidden="true" />
+                <span>
+                  {processing ? 'Elaborazione...' : cvStatus === 'loading' ? 'Caricamento OpenCV...' : 'Mostra risultato atteso'}
+                </span>
+              </button>
             </div>
-            
-            <div className="flex flex-row justify-center items-center gap-4">
-               <div className="flex flex-col items-center">
-                 <h4 className="text-xs text-dracula-comment mb-1">Source (Lena)</h4>
-                 <div className="bg-dracula-bg border border-dracula-current rounded w-full max-w-[150px]">
-                    <img ref={imgRef} src={lenaSrc} alt="Source" className="w-full h-auto rounded" />
-                 </div>
-               </div>
 
-               <div className="flex flex-col items-center">
-                 <h4 className="text-xs text-dracula-comment mb-1">Expected Output</h4>
-                 <div className="bg-dracula-bg border border-dracula-purple rounded w-full max-w-[150px] min-h-[150px] flex items-center justify-center">
-                    <canvas ref={canvasRef} className="w-full h-auto rounded max-w-full" />
-                 </div>
-               </div>
+            <div className="flex flex-row justify-center items-start gap-4">
+              <figure className="flex flex-col items-center w-full max-w-[180px]">
+                <figcaption className="text-xs text-dracula-comment mb-1">Sorgente (Lena)</figcaption>
+                <div className="bg-dracula-bg border border-dracula-current rounded w-full">
+                  <img ref={imgRef} src={lenaSrc} alt="Immagine sorgente: Lena" className="w-full h-auto rounded" />
+                </div>
+              </figure>
+
+              <figure className="flex flex-col items-center w-full max-w-[180px]">
+                <figcaption className="text-xs text-dracula-comment mb-1">Output atteso</figcaption>
+                <div className="bg-dracula-bg border border-dracula-purple rounded w-full aspect-square flex items-center justify-center">
+                  <canvas ref={canvasRef} className="w-full h-auto rounded max-w-full" />
+                </div>
+              </figure>
             </div>
             <p className="text-xs text-dracula-comment mt-4 text-center">
-              Questo visualizzatore mostra il risultato atteso per darti un'indicazione visiva sull'algoritmo da programmare.
+              {cvStatus === 'error'
+                ? 'Impossibile caricare OpenCV.js: controlla la connessione e ricarica la pagina.'
+                : "Il visualizzatore mostra il risultato atteso per darti un'indicazione sull'algoritmo da implementare."}
             </p>
           </div>
-
         </div>
       </div>
     </div>
