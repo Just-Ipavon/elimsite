@@ -127,12 +127,36 @@ const StudyArea = () => {
             </select>
 
             <h2 className="text-xl font-bold text-dracula-fg mb-2">{selectedAlgo.name}</h2>
-            <p className="text-dracula-comment text-sm leading-relaxed">{selectedAlgo.description}</p>
+            <p className="text-dracula-fg/90 text-sm leading-relaxed">{selectedAlgo.description}</p>
+
+            {selectedAlgo.steps?.length > 0 && (
+              <div className="mt-4">
+                <h3 className="text-sm font-bold uppercase tracking-wide text-dracula-purple mb-2">Come funziona</h3>
+                <ol className="list-decimal list-outside pl-5 space-y-1 text-sm text-dracula-comment leading-relaxed marker:text-dracula-purple">
+                  {selectedAlgo.steps.map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ol>
+              </div>
+            )}
 
             {activeExplanation ? (
               <div className="mt-6 p-5 border-l-4 border-dracula-pink bg-dracula-bg/80 rounded-lg shadow-lg" aria-live="polite">
                 <h3 className="font-bold text-dracula-pink mb-2 text-lg">{activeExplanation.title}</h3>
                 <p className="text-dracula-fg leading-relaxed">{activeExplanation.text}</p>
+                {activeExplanation.points?.length > 0 && (
+                  <ul className="mt-3 list-disc list-outside pl-5 space-y-1.5 text-dracula-fg/90 leading-relaxed marker:text-dracula-pink">
+                    {activeExplanation.points.map((point) => (
+                      <li key={point}>{point}</li>
+                    ))}
+                  </ul>
+                )}
+                {activeExplanation.note && (
+                  <p className="mt-3 p-3 rounded-md bg-dracula-yellow/10 border border-dracula-yellow/30 text-sm text-dracula-yellow leading-relaxed">
+                    <span className="font-bold">Nota: </span>
+                    {activeExplanation.note}
+                  </p>
+                )}
               </div>
             ) : (
               selectedAlgo.explanations?.length > 0 && (
@@ -213,8 +237,8 @@ const StudyArea = () => {
 
           <p className="text-xs text-dracula-comment mt-8 text-center max-w-sm">
             Il visualizzatore usa le funzioni native di OpenCV.js per emulare il risultato degli algoritmi C++ nel
-            browser. Per gli algoritmi più complessi (Region Growing, Split and Merge, Otsu multilivello) viene usato
-            un equivalente semplificato che ne mostra l'effetto visivo.
+            browser. Canny e Region Growing riproducono passo per passo il codice C++ di riferimento; per Split and
+            Merge e Otsu multilivello viene usato un equivalente semplificato che ne mostra l'effetto visivo.
           </p>
         </div>
       </div>

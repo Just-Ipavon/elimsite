@@ -21,96 +21,197 @@ export const algorithms = [
     id: "canny",
     name: "Canny Edge Detector",
     description:
-      "Rileva i bordi dell'immagine con l'algoritmo di Canny: smoothing Gaussiano, derivate x e y con Sobel, calcolo di magnitudo e fase, non-maximum suppression e sogliatura con isteresi.",
+      "Canny è il rilevatore di bordi «ottimo»: produce bordi sottili (spessi un pixel), ben localizzati e poco sensibili al rumore. L'implementazione è divisa in tre funzioni: myCanny orchestra la pipeline, nonMaxSuppression assottiglia i bordi e hysteresisThreshold decide quali tenere con una doppia soglia.",
+    steps: [
+      "Smoothing gaussiano 5×5 per attenuare il rumore (le derivate lo amplificherebbero).",
+      "Gradienti con Sobel: dx (variazioni orizzontali) e dy (variazioni verticali) in float.",
+      "Modulo del gradiente normalizzato in [0, 255] e fase (direzione) in gradi.",
+      "Non-maximum suppression: ogni pixel sopravvive solo se è un massimo lungo la direzione del gradiente.",
+      "Isteresi: i pixel ≥ highThresh sono bordi forti, quelli in [lowThresh, highThresh) vengono tenuti solo se toccano un bordo forte.",
+    ],
     explanations: [
       {
-        startMatch: "Mat gauss, dx, dy, magnitude, phase;",
+        startMatch: "void nonMaxSuppression(const Mat &mag, const Mat &phase, Mat &nms) {",
+        endMatch: "uchar q = 0, p = 0;",
+        title: "NMS · Preparazione",
+        text: "La non-maximum suppression riceve il modulo del gradiente (mag, 8 bit) e la fase (phase, float in gradi) e scrive il risultato in nms, inizializzata tutta a zero: un pixel diventa bordo solo se lo decidiamo esplicitamente.",
+        points: [
+          "I cicli partono da 1 e finiscono a rows-1 / cols-1: così i vicini (r±1, c±1) sono sempre dentro l'immagine. La cornice esterna resta nera.",
+          "cv::phase restituisce angoli in [0°, 360°): sottraendo 360 a quelli > 180 li riportiamo in [-180°, 180°], così ogni direzione e la sua opposta cadono in intervalli simmetrici.",
+          "val è il modulo del pixel corrente; q e p conterranno i due vicini da confrontare.",
+        ],
+      },
+      {
+        startMatch: "// 1. Settore Orizzontale",
+        endMatch: "p = mag.at<uchar>(r + 1, c + 1);",
+        title: "NMS · Quantizzazione della direzione",
+        text: "Il gradiente punta nella direzione di massima variazione, cioè perpendicolare al bordo. Per sapere se il pixel è il «crinale» del bordo lo confrontiamo con i due vicini che stanno lungo il gradiente. Dato che i vicini discreti sono solo 8, la direzione viene arrotondata a uno di 4 settori da 45°:",
+        points: [
+          "≈0° / 180° (gradiente orizzontale → bordo verticale): vicini Ovest (c-1) ed Est (c+1).",
+          "≈45° / -135°: vicini sulla diagonale (r-1, c+1) e (r+1, c-1).",
+          "≈90° / -90° (gradiente verticale → bordo orizzontale): vicini Nord (r-1) e Sud (r+1).",
+          "≈135° / -45° (ramo else): vicini sull'altra diagonale (r-1, c-1) e (r+1, c+1).",
+        ],
+        note: "Ogni settore è largo 45° (±22,5° attorno alla direzione principale) e compare due volte perché una direzione e la sua opposta individuano la stessa coppia di vicini.",
+      },
+      {
+        startMatch: "if (val >= q && val >= p) {",
+        endMatch: "nms.at<uchar>(r, c) = val;",
+        title: "NMS · Massimo locale",
+        text: "Se il modulo del pixel è maggiore o uguale a entrambi i vicini lungo il gradiente, il pixel è un massimo locale e ne copiamo il valore in nms; altrimenti resta 0. Il risultato è un bordo largo un solo pixel, ma ancora con intensità variabili: a decidere cosa è davvero bordo sarà l'isteresi.",
+      },
+      {
+        startMatch: "void hysteresisThreshold(const Mat &nms, Mat &dst, int lowThresh, int highThresh) {",
+        endMatch: "dst.at<uchar>(r, c) = 255;",
+        title: "Isteresi · Bordi forti",
+        text: "L'output dst parte tutto nero. Scorriamo la mappa nms: ogni pixel con valore ≥ highThresh è un bordo forte, cioè sicuramente un bordo, e viene impostato a 255.",
+      },
+      {
+        startMatch: "// E promuoviamo i bordi deboli connessi nell'intorno 3x3",
+        endMatch: "dst.at<uchar>(r + dr, c + dc) = 255;",
+        title: "Isteresi · Promozione dei bordi deboli",
+        text: "Attorno a ogni bordo forte si esamina l'intorno 3×3 (dr, dc ∈ {-1, 0, 1}). I vicini deboli, con valore in [lowThresh, highThresh), vengono promossi a 255 perché sono connessi a un bordo certo. I pixel sotto lowThresh, e i deboli isolati, restano a 0.",
+        points: [
+          "La doppia soglia evita sia i bordi spezzati (una sola soglia alta) sia il rumore (una sola soglia bassa).",
+          "Il pixel centrale ha valore ≥ highThresh, quindi la condizione n < highThresh lo esclude automaticamente.",
+        ],
+        note: "Questa versione fa un solo passaggio: promuove i deboli adiacenti a un forte, ma non propaga lungo catene di deboli. Il Canny «completo» ripete la promozione (con una coda o uno stack) finché nessun pixel cambia.",
+      },
+      {
+        startMatch: "GaussianBlur(src, gauss, Size(5, 5), 0);",
+        endMatch: "Sobel(gauss, dy, CV_32F, 0, 1, 3);",
+        title: "Pipeline · Smoothing e gradienti",
+        text: "Le derivate amplificano il rumore, quindi prima si applica un filtro gaussiano 5×5 (sigma = 0 → OpenCV lo calcola dalla dimensione del kernel). Poi Sobel 3×3 calcola la derivata in x (dx: ordine 1, 0) e in y (dy: ordine 0, 1).",
+        points: [
+          "CV_32F è obbligatorio: le derivate possono essere negative e su 8 bit verrebbero troncate a 0.",
+          "dx è grande sui bordi verticali, dy su quelli orizzontali.",
+        ],
+      },
+      {
+        startMatch: "magnitude(dx, dy, mag);",
         endMatch: "cv::phase(dx, dy, phase, true);",
-        title: "Smoothing & Gradienti (Sobel)",
-        text: "Primo step: il filtro Gaussiano rimuove il rumore. Poi si applicano i filtri di Sobel per trovare i gradienti orizzontali e verticali, da cui si calcola magnitudo (forza del bordo) e fase (orientamento).",
+        title: "Pipeline · Modulo e fase",
+        text: "Per ogni pixel il gradiente è il vettore (dx, dy).",
+        points: [
+          "magnitude: |G| = √(dx² + dy²), la «forza» del bordo.",
+          "normalize con NORM_MINMAX porta il modulo in [0, 255] su 8 bit (CV_8U): così le soglie 30 e 90 sono indipendenti dal contrasto dell'immagine.",
+          "cv::phase con true restituisce l'angolo atan2(dy, dx) in gradi, in [0°, 360°). Si scrive cv::phase perché la variabile locale si chiama anch'essa phase.",
+        ],
       },
       {
-        startMatch: "for (int y = 1; y < magnitude.rows - 1; y++) {",
-        endMatch: "magnitude.at<uchar>(y, x) = 0;\n        }\n    }",
-        title: "Non-Maximum Suppression",
-        text: "Passo per assottigliare i bordi: il valore del gradiente di ogni pixel viene confrontato con i due vicini lungo la direzione identificata dalla fase. Se non è un massimo locale, viene scartato (reso nero).",
+        startMatch: "nonMaxSuppression(mag, phase, nms);",
+        endMatch: "hysteresisThreshold(nms, dst, lowThresh, highThresh);",
+        title: "Pipeline · Assottigliamento e sogliatura",
+        text: "Le due fasi vengono chiamate in sequenza: la NMS trasforma il modulo in bordi larghi un pixel (nms), l'isteresi li binarizza in dst (0 = sfondo, 255 = bordo).",
       },
       {
-        startMatch: "int th1 = 20;",
-        endMatch: "magnitude.copyTo(dst);",
-        title: "Hysteresis Thresholding",
-        text: "Ultimo step con doppia soglia. I pixel con gradiente > th2 sono bordi 'certi'. I pixel tra th1 e th2 sono bordi 'deboli', mantenuti solo se adiacenti a un bordo certo.",
+        startMatch: "myCanny(src, dst, 30, 90);",
+        title: "Scelta delle soglie",
+        text: "lowThresh = 30 e highThresh = 90 sono riferite al modulo normalizzato in [0, 255]. Il rapporto 1:3 è quello consigliato da Canny (tra 1:2 e 1:3): soglie più alte danno meno bordi e più puliti, soglie più basse più dettagli ma anche più rumore.",
       },
     ],
     codeReference: `#include <opencv2/opencv.hpp>
-#include <stdlib.h>
+#include <iostream>
 
-using namespace cv;
 using namespace std;
+using namespace cv;
 
-void Canny(const Mat src, Mat &dst) {
-    Mat gauss, dx, dy, magnitude, phase;
-    GaussianBlur(src, gauss, Size(5, 5), 0, 0);
-    Sobel(gauss, dx, CV_32FC1, 1, 0, 3);
-    Sobel(gauss, dy, CV_32FC1, 0, 1, 3);
-    cv::magnitude(dx, dy, magnitude);
-    normalize(magnitude, magnitude, 0, 255, NORM_MINMAX, CV_8UC1);
-    cv::phase(dx, dy, phase, true);
-    
-    uchar q, r;
-    for (int y = 1; y < magnitude.rows - 1; y++) {
-        for (int x = 1; x < magnitude.cols - 1; x++) {
-            float angle = phase.at<float>(y, x) > 180 ? phase.at<float>(y, x) - 360 : phase.at<float>(y, x);
-            uchar mag = magnitude.at<uchar>(y, x);
-            if ((angle <= -157.5 || angle > 157.5) || (angle > -22.5 && angle <= 22.5)) {
-                q = magnitude.at<uchar>(y, x - 1);
-                r = magnitude.at<uchar>(y, x + 1);
-            } else if ((angle > -157.5 && angle <= -112.5) || (angle > 22.5 && angle <= 67.5)) {
-                q = magnitude.at<uchar>(y + 1, x - 1);
-                r = magnitude.at<uchar>(y - 1, x + 1);
-            } else if ((angle > 67.5 && angle <= 112.5) || (angle > -112.5 && angle <= -67.5)) {
-                q = magnitude.at<uchar>(y + 1, x);
-                r = magnitude.at<uchar>(y - 1, x);
-            } else {
-                q = magnitude.at<uchar>(y - 1, x - 1);
-                r = magnitude.at<uchar>(y + 1, x + 1);
+// FASE 1: Soppressione dei non-massimi
+void nonMaxSuppression(const Mat &mag, const Mat &phase, Mat &nms) {
+    nms = Mat::zeros(mag.size(), CV_8U);
+
+    for (int r = 1; r < mag.rows - 1; r++) {
+        for (int c = 1; c < mag.cols - 1; c++) {
+            float ang = phase.at<float>(r, c);
+            if (ang > 180.0f) ang -= 360.0f; // Mappa in [-180, 180]
+
+            uchar val = mag.at<uchar>(r, c);
+            uchar q = 0, p = 0;
+
+            // 1. Settore Orizzontale (~0° / 180°): confronta Ovest ed Est
+            if ((ang >= -22.5f && ang <= 22.5f) || ang <= -157.5f || ang >= 157.5f) {
+                q = mag.at<uchar>(r, c - 1);
+                p = mag.at<uchar>(r, c + 1);
             }
-            if (mag < r || mag < q)
-                magnitude.at<uchar>(y, x) = 0;
-        }
-    }
-    
-    int th1 = 20;
-    int th2 = 50;
-    for (int i = 1; i < magnitude.rows - 1; i++) {
-        for (int j = 1; j < magnitude.cols - 1; j++) {
-            uchar px = magnitude.at<uchar>(i, j);
-            if (px >= th2) px = 255;
-            else if (px < th1) px = 0;
+            // 2. Settore Diagonale (~45° / -135°): Nord-Est e Sud-Ovest
+            else if ((ang > 22.5f && ang <= 67.5f) || (ang >= -157.5f && ang < -112.5f)) {
+                q = mag.at<uchar>(r - 1, c + 1);
+                p = mag.at<uchar>(r + 1, c - 1);
+            }
+            // 3. Settore Verticale (~90° / -90°): Nord e Sud
+            else if ((ang > 67.5f && ang <= 112.5f) || (ang >= -112.5f && ang < -67.5f)) {
+                q = mag.at<uchar>(r - 1, c);
+                p = mag.at<uchar>(r + 1, c);
+            }
+            // 4. Settore Anti-diagonale (~135° / -45°): Nord-Ovest e Sud-Est
             else {
-                bool sn = false;
-                for (int x = -1; x <= 1 && !sn; x++)
-                    for (int y = -1; y <= 1 && !sn; y++)
-                        if (magnitude.at<uchar>(i + x, j + y) > th2)
-                            sn = true;
-                if (sn) px = 255;
-                else px = 0;
+                q = mag.at<uchar>(r - 1, c - 1);
+                p = mag.at<uchar>(r + 1, c + 1);
             }
-            magnitude.at<uchar>(i, j) = px;
+
+            if (val >= q && val >= p) {
+                nms.at<uchar>(r, c) = val;
+            }
         }
     }
-    magnitude.copyTo(dst);
 }
 
-int main( int argc, char** argv ) {
-	Mat src = imread( argv[1], IMREAD_GRAYSCALE );
-	if(src.empty()) return -1;
-	Mat dst;
-	Canny(src, dst);
-	imshow("src", src);
-	imshow("dst", dst);
-	waitKey(0);
-	return 0;
+// FASE 2: Isteresi con doppia soglia
+void hysteresisThreshold(const Mat &nms, Mat &dst, int lowThresh, int highThresh) {
+    dst = Mat::zeros(nms.size(), CV_8U);
+
+    for (int r = 1; r < nms.rows - 1; r++) {
+        for (int c = 1; c < nms.cols - 1; c++) {
+            // Se troviamo un bordo forte, lo confermiamo
+            if (nms.at<uchar>(r, c) >= highThresh) {
+                dst.at<uchar>(r, c) = 255;
+                // E promuoviamo i bordi deboli connessi nell'intorno 3x3
+                for (int dr = -1; dr <= 1; dr++) {
+                    for (int dc = -1; dc <= 1; dc++) {
+                        uchar n = nms.at<uchar>(r + dr, c + dc);
+                        if (n >= lowThresh && n < highThresh) {
+                            dst.at<uchar>(r + dr, c + dc) = 255;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// FASE 3: Orchestratore Pipeline Canny
+void myCanny(const Mat &src, Mat &dst, int lowThresh, int highThresh) {
+    Mat gauss, dx, dy, mag, phase, nms;
+
+    // A. Filtro antirumore
+    GaussianBlur(src, gauss, Size(5, 5), 0);
+
+    // B. Calcolo gradienti spaziali
+    Sobel(gauss, dx, CV_32F, 1, 0, 3);
+    Sobel(gauss, dy, CV_32F, 0, 1, 3);
+
+    // C. Modulo normalizzato a 8 bit e Angolo in gradi
+    magnitude(dx, dy, mag);
+    normalize(mag, mag, 0, 255, NORM_MINMAX, CV_8U);
+    cv::phase(dx, dy, phase, true);
+
+    // D. Chiamata ai due moduli
+    nonMaxSuppression(mag, phase, nms);
+    hysteresisThreshold(nms, dst, lowThresh, highThresh);
+}
+
+int main(int argc, char** argv) {
+    if (argc < 2) return -1;
+    Mat src = imread(argv[1], IMREAD_GRAYSCALE);
+    if (src.empty()) return -1;
+
+    Mat dst;
+    myCanny(src, dst, 30, 90);
+
+    imshow("Originale", src);
+    imshow("Bordi Canny", dst);
+    waitKey(0);
+    return 0;
 }`,
     cppSkeleton: baseTemplate,
   },
@@ -118,25 +219,59 @@ int main( int argc, char** argv ) {
     id: "harris",
     name: "Harris Corner Detection",
     description:
-      "Rileva gli angoli (corner) usando derivate, smoothing, traccia e determinante della matrice di autocorrelazione per calcolare la risposta R.",
+      "Harris individua gli angoli (corner): punti in cui l'intensità cambia molto spostando una piccola finestra in qualunque direzione. Su una zona piatta non cambia nulla, lungo un bordo cambia solo attraversandolo, su un angolo cambia in tutte le direzioni. Questo comportamento è riassunto dalla matrice di struttura M e dalla risposta R = det(M) − k·trace(M)².",
+    steps: [
+      "Derivate Ix e Iy con Sobel e loro prodotti Ix², Iy², Ix·Iy.",
+      "Smoothing gaussiano dei prodotti: è la somma pesata sulla finestra attorno a ogni pixel e fornisce gli elementi di M.",
+      "Risposta R = det(M) − 0,04·trace(M)² per ogni pixel.",
+      "Normalizzazione di R in [0, 255] e cerchio sui pixel con R > 100.",
+    ],
     explanations: [
+      {
+        startMatch: "void circleCorners(Mat& src, Mat& dst) {",
+        endMatch: "circle(dst, Point(j, i), 5, Scalar(0), 1);",
+        title: "Disegno dei corner",
+        text: "Funzione di supporto chiamata alla fine: scorre la mappa R già normalizzata in [0, 255] (float) e, dove il valore supera 100, disegna su dst un cerchio nero di raggio 5.",
+        note: "Point vuole (x, y) = (colonna, riga): per questo si scrive Point(j, i) e non Point(i, j).",
+      },
       {
         startMatch: "Mat Dx, Dy;",
         endMatch: "multiply(Dx, Dy, DxDy);",
-        title: "Derivate Spaziali",
-        text: "Si calcolano le derivate orientate (Dx, Dy) tramite l'operatore di Sobel e poi i loro prodotti (Dx2, Dy2, DxDy) che andranno a formare la matrice di autocorrelazione.",
+        title: "Derivate e loro prodotti",
+        text: "Sobel calcola le derivate Ix (1, 0) e Iy (0, 1) in float, perché possono essere negative. Il kernel 11×11 è molto grande: le derivate risultano già smussate, ma i valori diventano enormi (per questo alla fine si normalizza).",
+        points: [
+          "pow(Dx, 2) → Ix² e pow(Dy, 2) → Iy²: elementi sulla diagonale di M.",
+          "multiply(Dx, Dy) → Ix·Iy: prodotto elemento per elemento (non matriciale), elemento fuori diagonale.",
+        ],
       },
       {
-        startMatch: "GaussianBlur(Dx2, C00",
+        startMatch: "Mat C00, C01, C10, C11;",
         endMatch: "C10 = C01;",
-        title: "Smoothing Matrice (Finestra Pesata)",
-        text: "I prodotti delle derivate vengono sfocati gaussianamente per simulare una somma pesata di finestra attorno ad ogni pixel, creando le componenti effettive C00, C11, C01 della matrice.",
+        title: "Matrice di struttura M",
+        text: "Per ogni pixel M = [[ΣIx², ΣIxIy], [ΣIxIy, ΣIy²]], dove le somme sono pesate da una finestra gaussiana. Applicare GaussianBlur 7×7 ai prodotti calcola proprio queste somme pesate per tutti i pixel insieme.",
+        points: [
+          "C00 = Σ w·Ix², C11 = Σ w·Iy², C01 = Σ w·IxIy.",
+          "M è simmetrica, quindi C10 = C01 (assegnazione tra Mat: condividono gli stessi dati, nessuna copia).",
+        ],
       },
       {
-        startMatch: "multiply(C00, C11, PPD);",
+        startMatch: "Mat det, trace, trace2, R, PPD, PSD;",
         endMatch: "R = det - 0.04f * trace2;",
-        title: "Response Score (R)",
-        text: "Si approssima il calcolo degli autovalori usando la formula R = Det(M) - k * Trace(M)^2. Un valore R alto e positivo ci assicura di essere caduti proprio su uno spigolo (corner).",
+        title: "Risposta di Harris R",
+        text: "Calcolare gli autovalori λ1, λ2 di M per ogni pixel è costoso; Harris usa det(M) = λ1·λ2 e trace(M) = λ1 + λ2, che si ottengono con semplici prodotti e somme.",
+        points: [
+          "det = C00·C11 − C01·C10 (prodotto della diagonale principale meno quello della secondaria).",
+          "trace = C00 + C11, poi elevata al quadrato.",
+          "R = det − k·trace² con k = 0,04 (valori tipici 0,04–0,06).",
+          "R grande e positivo → entrambi gli autovalori grandi → angolo. R negativo → un solo autovalore grande → bordo. |R| piccolo → zona piatta.",
+        ],
+      },
+      {
+        startMatch: "normalize(R, R, 0, 255, NORM_MINMAX, CV_32FC1);",
+        endMatch: "circleCorners(R, dst);",
+        title: "Normalizzazione e output",
+        text: "R viene riscalata in [0, 255] restando in float; convertScaleAbs la converte in 8 bit dentro dst, così l'output mostra la mappa di risposta. Infine circleCorners evidenzia i pixel con R normalizzata > 100.",
+        note: "Non c'è una non-maximum suppression: attorno a un angolo forte più pixel adiacenti superano la soglia e i cerchi si sovrappongono.",
       },
     ],
     codeReference: `#include <opencv2/opencv.hpp>
@@ -202,24 +337,52 @@ int main( int argc, char** argv ) {
     id: "hough_circles",
     name: "Hough Circles",
     description:
-      "Rileva i cerchi con la trasformata di Hough: estrae i bordi con Canny e popola uno spazio dei voti 3D (x, y, raggio).",
+      "La trasformata di Hough per i cerchi cerca cerchi di raggio noto (qui da 22 a 24 pixel). Ogni pixel di bordo «vota» tutti i possibili centri da cui potrebbe provenire; i veri centri accumulano molti voti perché ricevono il voto da tutti i punti della propria circonferenza.",
+    steps: [
+      "Smoothing, conversione in grigio e Canny per ottenere i pixel di bordo.",
+      "Accumulatore 3D votes(y, x, r) inizializzato a zero.",
+      "Per ogni pixel di bordo, raggio e angolo θ: voto al centro (a, b) = (x − r·cosθ, y − r·sinθ).",
+      "Le celle con almeno 123 voti sono cerchi: si disegnano centro e circonferenza.",
+    ],
     explanations: [
       {
-        startMatch: "Canny(src_gray, edges, 100, 112);",
-        title: "Estrazione preliminare dei bordi",
-        text: "La trasformata di Hough lavora specificamente sui pixel di bordo, quindi usiamo Canny in anticipo per creare una mappa binaria delineata.",
+        startMatch: "const int minRadius = 22;",
+        endMatch: "#define DEG2RAD CV_PI / 180",
+        title: "Parametri",
+        text: "Si cercano raggi nell'intervallo [minRadius, maxRadius), cioè 22, 23 e 24 (il ciclo usa <). DEG2RAD converte i gradi in radianti, perché cos e sin lavorano in radianti.",
+        note: "Ogni raggio in più aggiunge un intero «piano» all'accumulatore e un ciclo di 360 angoli per ogni pixel di bordo: l'intervallo stretto tiene bassi memoria e tempo.",
       },
       {
-        startMatch: "for (int radius=minRadius; radius<maxRadius; radius++)",
+        startMatch: "src.copyTo(dst);",
+        endMatch: "Canny(src_gray, edges, 100, 112);",
+        title: "Pre-elaborazione e accumulatore",
+        text: "dst è una copia a colori di src su cui disegneremo. L'immagine viene sfocata (meno bordi spuri), convertita in grigio e passata a Canny, che produce una mappa binaria dei bordi (0 o 255).",
+        points: [
+          "votes è una Mat a 3 dimensioni: righe × colonne × numero di raggi, float a zero. votes(b, a, r − minRadius) conta i voti per un cerchio di centro (a, b) e raggio r.",
+          "CV_RGB2GRAY è la vecchia costante C; in OpenCV 4 l'equivalente è COLOR_BGR2GRAY.",
+        ],
+      },
+      {
+        startMatch: "for (int y=0; y<edges.rows; y++)",
         endMatch: "votes.at<float>(b,a,radius-minRadius)++;",
-        title: "Spazio di Accumulazione (Votazioni)",
-        text: "Per ogni punto del bordo, e per ogni possibile raggio, calcoliamo le coordinate (a,b) del centro del cerchio tramite angolo polare iterativo e 'votiamo' quella coordinata nello spazio di Hough 3D.",
+        title: "Votazione",
+        text: "Un punto (x, y) di una circonferenza di raggio r ha il centro a distanza r. Non sapendo in che direzione, il punto vota tutti i 360 centri possibili, che formano a loro volta un cerchio di raggio r attorno a lui:",
+        points: [
+          "a = x − r·cos θ, b = y − r·sin θ per θ = 0…359°.",
+          "Il controllo dei limiti scarta i centri fuori dall'immagine.",
+          "Per un cerchio reale tutti i punti della circonferenza votano lo stesso centro, che diventa un picco dell'accumulatore.",
+        ],
       },
       {
-        startMatch: "if (votes.at<float>(i,j,radius-minRadius) >= 123)",
-        endMatch: "circle(dst, Point(j,i), radius",
-        title: "Recupero Cerchi (Massimi)",
-        text: "Esaminiamo i voti accumulati: se una cella (x,y,r) ha ricevuto sufficienti voti (>123), confermiamo il cerchio e procediamo a disegnarlo!",
+        startMatch: "for (int radius=minRadius; radius<maxRadius; radius++)\n        for (int i=0; i<src_gray.rows; i++)",
+        endMatch: "circle(dst, Point(j,i), radius, Scalar(255,0,0), 2, LINE_AA);",
+        title: "Estrazione dei cerchi",
+        text: "Si scorre l'accumulatore: ogni cella con almeno 123 voti è un cerchio. Si disegna un punto nel centro e la circonferenza di raggio radius, in blu (Scalar è in ordine BGR).",
+        points: [
+          "Perché 123? Una circonferenza di raggio 22 ha circa 2π·22 ≈ 138 pixel: la soglia richiede che quasi tutto il contorno sia visibile.",
+          "Soglia più bassa → trova cerchi parziali ma anche falsi positivi; più alta → solo cerchi quasi perfetti.",
+        ],
+        note: "Senza non-maximum suppression nell'accumulatore, un cerchio reale può essere disegnato più volte con centri o raggi vicini.",
       },
     ],
     codeReference: `#include <opencv2/opencv.hpp>
@@ -277,25 +440,49 @@ int main( int argc, char** argv ) {
     id: "hough_lines",
     name: "Hough Lines",
     description:
-      "Rileva le rette con la trasformata di Hough: spazio di accumulazione ρ-θ popolato dai pixel di bordo (Canny).",
+      "La trasformata di Hough per le rette rappresenta ogni retta in forma polare ρ = x·cos θ + y·sin θ, dove ρ è la distanza dall'origine e θ l'angolo della normale. Ogni pixel di bordo vota tutte le rette (ρ, θ) che passano per lui; le rette vere raccolgono i voti di tutti i loro pixel.",
+    steps: [
+      "Accumulatore votes[ρ][θ] dimensionato con la diagonale dell'immagine.",
+      "Smoothing e Canny per ottenere i pixel di bordo.",
+      "Per ogni pixel di bordo e per ogni θ: calcolo di ρ e voto.",
+      "Le celle con almeno 100 voti diventano rette, convertite in due punti cartesiani e disegnate.",
+    ],
     explanations: [
+      {
+        startMatch: "void polarToCartesian(double rho, int theta, Point& p1, Point& p2){",
+        endMatch: "p2.y = cvRound(y0 - alpha*(cos(rad)));",
+        title: "Da (ρ, θ) a due punti",
+        text: "Per disegnare una retta con line() servono due punti. (x0, y0) = (ρ·cos θ, ρ·sin θ) è il piede della perpendicolare dall'origine alla retta. La retta è perpendicolare alla normale, quindi la sua direzione è (−sin θ, cos θ).",
+        points: [
+          "p1 = (x0, y0) + 1000·(−sin θ, cos θ) e p2 = (x0, y0) − 1000·(−sin θ, cos θ).",
+          "alpha = 1000 basta a portare i punti fuori dall'immagine: la retta attraversa tutta la figura.",
+        ],
+      },
       {
         startMatch: "int maxDist = hypot(src.rows, src.cols);",
         endMatch: "Canny(gsrc,edges,50,150);",
-        title: "Setup & Canny",
-        text: "Calcoliamo la massima estensione possibile della retta (la diagonale) per dimensionare l'accumulatore, e filtriamo l'immagine per avere solo i bordi binari.",
+        title: "Accumulatore e bordi",
+        text: "|ρ| non può superare la diagonale dell'immagine (hypot = √(rows² + cols²)). Poiché ρ può essere negativo, l'accumulatore ha 2·maxDist + 1 righe e l'indice di riga è ρ + maxDist. Le colonne sono i 180 angoli possibili (θ e θ + 180° individuano la stessa retta).",
+        points: [
+          "GaussianBlur 3×3 riduce il rumore, Canny(50, 150) produce i bordi binari.",
+        ],
       },
       {
-        startMatch: "for(theta = 0; theta < 180; theta++){",
+        startMatch: "for(int x=0; x<edges.rows; x++)",
         endMatch: "votes[(int)rho][theta]++;",
-        title: "Votazione (ρ e θ)",
-        text: "Scorrendo i pixel di bordo (255), iteriamo su tutti i 180 angoli e calcoliamo ρ. Incrementiamo il contatore dei voti nella matrice parametrica (rho, theta) per evidenziare la retta passante per il pixel.",
+        title: "Votazione",
+        text: "Per ogni pixel di bordo (255) si provano tutti i 180 angoli e si calcola il ρ della retta che passa per quel pixel con quell'inclinazione, poi si incrementa votes[ρ + maxDist][θ].",
+        points: [
+          "Attenzione ai nomi: qui x è la riga e y la colonna, quindi ρ = colonna·cos(θ − 90°) + riga·sin(θ − 90°).",
+          "L'indice theta = 0…179 rappresenta l'angolo reale θ − 90° ∈ [−90°, 89°].",
+        ],
       },
       {
-        startMatch: "if(votes[i][j] >= 100){",
+        startMatch: "dst=src.clone();",
         endMatch: "line(dst,p1,p2,Scalar(0,0,255),2,LINE_AA);",
-        title: "Estrazione Rette",
-        text: "Se una cella ha almeno 100 voti, vuol dire che 100 pixel di bordo appartengono a quella stessa retta polare. Trasformiamo quindi in coordinate Cartesiane (p1, p2) e la disegniamo fissa.",
+        title: "Estrazione delle rette",
+        text: "Si scorre l'accumulatore: una cella con almeno 100 voti significa che almeno 100 pixel di bordo stanno sulla stessa retta. Dagli indici si torna ai valori reali, ρ = i − maxDist e θ = j − 90, si convertono in due punti e si disegna la retta in rosso (BGR = 0, 0, 255).",
+        note: "src è in scala di grigi, quindi anche dst ha un solo canale e la retta appare con l'intensità del primo valore dello Scalar. Per vederla rossa bisognerebbe prima convertire dst in BGR.",
       },
     ],
     codeReference: `#include <opencv2/opencv.hpp>
@@ -363,31 +550,56 @@ int main( int argc, char** argv ) {
     id: "kmeans",
     name: "K-means Clustering",
     description:
-      "Algoritmo K-means nativo. Sceglie centri random, ricalcola distanze e sposta i centri iterativamente fino a convergenza o soglia raggiunta.",
+      "K-means divide i pixel in k = 6 gruppi (cluster) di colore simile. Ogni cluster è rappresentato da un centro (un colore BGR); l'algoritmo alterna assegnazione dei pixel al centro più vicino e ricalcolo dei centri come media, finché i centri smettono di muoversi in modo significativo.",
+    steps: [
+      "Inizializzazione: k centri presi dal colore di k pixel casuali.",
+      "Assegnazione: ogni pixel va nel cluster del centro più vicino.",
+      "Aggiornamento: ogni centro diventa la media dei colori del suo cluster.",
+      "Ripetizione di assegnazione e aggiornamento fino a convergenza, poi ogni pixel viene colorato con il proprio centro.",
+    ],
     explanations: [
       {
-        startMatch: "void computeRandomCenter",
-        endMatch: "cluster.push_back( vector<Point>() );\n\t}",
-        title: "1. Semi Casuali",
-        text: "Estrae col generatore uniform casuale K punti nell'immagine e ne assume il colore come Centro Iniziale per ciascun segmento.",
+        startMatch: "const int k = 6;",
+        endMatch: "return (double) blue + green + red;",
+        title: "Parametri e distanza",
+        text: "k è il numero di cluster, th la soglia di convergenza. computeDistance misura quanto due colori sono diversi sommando le differenze assolute dei tre canali B, G, R.",
+        note: "È la distanza di Manhattan (L1), non quella euclidea: |ΔB| + |ΔG| + |ΔR|. È più veloce da calcolare e funziona bene per confrontare colori.",
       },
       {
-        startMatch: "void populateCluster",
-        endMatch: "cluster.at(labelID).push_back(Point(j,i));\n\t\t}",
-        title: "2. Assegnazione",
-        text: "Calcola la distanza Euclidea tra il colore del pixel attuale e ciascuno dei K cluster. Assegna inevitabilmente il pixel al cluster il cui centro dista meno matematicamente.",
+        startMatch: "void computeRandomCenter(",
+        endMatch: "cluster.push_back( vector<Point>() );",
+        title: "1. Centri iniziali casuali",
+        text: "Il generatore RNG, inizializzato con getTickCount() (quindi diverso a ogni esecuzione), estrae k posizioni casuali. Il colore Vec3b di quei pixel diventa il centro iniziale di ogni cluster, e per ogni cluster si crea una lista vuota di punti.",
+        note: "Il risultato dipende dai centri iniziali: esecuzioni diverse possono dare segmentazioni leggermente diverse.",
       },
       {
-        startMatch: "double adjustCenter",
+        startMatch: "void populateCluster(",
+        endMatch: "cluster.at(labelID).push_back(Point(j,i));",
+        title: "2. Assegnazione dei pixel",
+        text: "Per ogni pixel si calcola la distanza dal colore di ciascuno dei k centri e si tiene il minimo (dist parte da INFINITY così il primo confronto vince sempre). Il punto viene aggiunto alla lista del cluster più vicino, labelID.",
+      },
+      {
+        startMatch: "double adjustCenter(",
         endMatch: "return change;",
-        title: "3. Rideterminazione del Centro",
-        text: "Ora che migliaia di pixel appartengono allo stesso gruppo, l'algoritmo fa la media dei loro colori in R, G e B, generando il vero colore mediano e aggiornando il Centro del cluster. Calcola anche di quanto il centro si è 'spostato' (change).",
+        title: "3. Aggiornamento dei centri",
+        text: "Per ogni cluster si sommano i canali B, G, R di tutti i suoi pixel e si divide per il numero di pixel: la media diventa il nuovo centro.",
+        points: [
+          "newValue accumula di quanto si è spostato ogni centro (distanza tra vecchio e nuovo) e alla fine viene diviso per k: è lo spostamento medio.",
+          "change = |oldValue − newValue| è la variazione dello spostamento medio rispetto all'iterazione precedente; oldValue viene aggiornato (passato per riferimento).",
+        ],
+        note: "Se un cluster resta vuoto, la divisione per size() = 0 produce NaN: è un caso raro ma possibile con centri iniziali sfortunati.",
       },
       {
-        startMatch: "while (dist > th) {",
+        startMatch: "void segment(Mat& dst, vector<Scalar> center, vector<vector<Point>> cluster) {",
+        endMatch: "dst.at<Vec3b>(point)[i] = center.at(label)[i];",
+        title: "4. Colorazione finale",
+        text: "Ogni pixel di ogni cluster viene sostituito, canale per canale, con il colore del proprio centro. L'immagine finale contiene quindi solo k colori.",
+      },
+      {
+        startMatch: "void Kmeans(const Mat src, Mat& dst) {",
         endMatch: "segment(dst, center, cluster);",
-        title: "4. Loop di Convergenza",
-        text: "Finché la distanza di aggiustamento dei baricentri è maggiore di una soglia minima (th), riassocia da zero i pixel e calcola i nuovi centri. Alla fine si usa 'segment' per colorare appiattiti i cluster di output!",
+        title: "Ciclo di convergenza",
+        text: "dst parte come copia di src. oldValue = INFINITY rende infinita la prima distanza, quindi si entra sempre nel ciclo. A ogni iterazione si svuotano i cluster, si riassegnano i pixel e si aggiornano i centri; quando la variazione scende sotto th = 0,05 i centri sono stabili e si colora l'output.",
       },
     ],
     codeReference: `#include <opencv2/opencv.hpp>
@@ -493,25 +705,51 @@ int main( int argc, char** argv ) {
     id: "otsu",
     name: "Otsu Thresholding",
     description:
-      "Metodo di Otsu: calcola istogramma e probabilità cumulate, poi massimizza la varianza tra le classi (between-class) per trovare la soglia k* ottimale.",
+      "Il metodo di Otsu sceglie automaticamente la soglia di binarizzazione. Prova tutte le soglie k da 0 a 255: ognuna divide i pixel in due classi (scuri ≤ k, chiari > k). La soglia migliore è quella che rende le due classi il più separate possibile, cioè che massimizza la varianza tra le classi σB².",
+    steps: [
+      "Istogramma normalizzato: probabilità p(i) di ogni livello di grigio.",
+      "Media globale mG = Σ i·p(i).",
+      "Per ogni k: probabilità cumulata P1(k), media cumulata m(k) e varianza σB²(k).",
+      "La soglia k* è quella con σB² massima; si binarizza con threshold().",
+    ],
     explanations: [
       {
         startMatch: "vector<double> normalizedHistogram(Mat& src) {",
         endMatch: "return his;",
-        title: "Istogramma Normalizzato (Probabilità)",
-        text: "Conta quanti pixel hanno un certo livello di grigio, dopodiché divide tutto per il numero totale dei pixel. Il risultato è la Probabilità (da 0 a 1) di trovare quel livello nell'immagine.",
+        title: "Istogramma normalizzato",
+        text: "Si contano i pixel per ciascuno dei 256 livelli di grigio (il valore del pixel è usato direttamente come indice). Dividendo per il numero totale di pixel si ottiene p(i), la probabilità che un pixel abbia livello i; la somma di tutti i p(i) è 1.",
       },
       {
         startMatch: "for (int i = 0; i < 256; i++) gMean += i * his[i];",
-        endMatch: "for (int i = 0; i < 256; i++) gMean += i * his[i];",
-        title: "Media Globale (gMean)",
-        text: "Costituisce la media pesata di tutta l'immagine basata sul suo istogramma. Serve alla varianza per quantificare lo scarto delle due classi.",
+        title: "Media globale",
+        text: "mG = Σ i·p(i) è l'intensità media dell'intera immagine. È il riferimento rispetto a cui si misura quanto le due classi si allontanano.",
+      },
+      {
+        startMatch: "double currProb1 = 0.0f;",
+        endMatch: "int kstar = 0;",
+        title: "Accumulatori",
+        text: "Invece di ricalcolare tutto da zero per ogni soglia, si usano valori cumulativi aggiornati di un passo a ogni iterazione:",
+        points: [
+          "currProb1 = P1(k): frazione di pixel nella classe scura (livelli 0…k).",
+          "currCumMean = m(k) = Σ i·p(i) fino a k.",
+          "maxVar e kstar memorizzano il miglior valore trovato finora e la soglia corrispondente.",
+        ],
       },
       {
         startMatch: "for (int i = 0; i < 256; i++) {",
-        endMatch: "kstar = i;\n        }",
-        title: "Massimizzazione Varianza Between Classes",
-        text: "Iteriamo ogni possibile intensità (soglia i). Calcoliamo la Varianza Tra Le Classi: se è superiore al massimo trovato finora, aggiorniamo il max e settiamo Kstar alla nuova soglia ottima.",
+        endMatch: "return kstar;",
+        title: "Massimizzazione di σB²",
+        text: "Per ogni soglia i si aggiornano P1 e m, poi si calcola la varianza tra le classi con la formula di Otsu σB² = (mG·P1 − m)² / (P1·(1 − P1)). Se è la più alta vista finora, i diventa la nuova soglia ottima k*.",
+        points: [
+          "Massimizzare la varianza tra le classi equivale a minimizzare la varianza dentro le classi.",
+          "Quando P1 = 0 o P1 = 1 il denominatore è 0 e il risultato è NaN o infinito; un confronto con NaN è sempre falso, quindi quei casi vengono ignorati.",
+        ],
+      },
+      {
+        startMatch: "int th = otsu(src);",
+        endMatch: "threshold(src, dst, th, 255, THRESH_BINARY);",
+        title: "Binarizzazione",
+        text: "La soglia trovata viene passata a threshold con THRESH_BINARY: i pixel > th diventano 255 (bianco), gli altri 0 (nero).",
       },
     ],
     codeReference: `#include <opencv2/opencv.hpp>
@@ -570,19 +808,45 @@ int main( int argc, char** argv ) {
     id: "otsu2k",
     name: "Otsu 2K (Multi-level)",
     description:
-      "Estensione di Otsu per multipli threshold. Calcola varianza combinata su N settori per trovare le doppie/triple soglie di binarizzazione.",
+      "Estensione di Otsu a due soglie (k1, k2), che dividono i pixel in tre classi: scuri, medi e chiari. Il principio è lo stesso: si provano tutte le coppie di soglie e si sceglie quella che massimizza la varianza tra le classi σB² = Σ Pw·(mw − mG)².",
+    steps: [
+      "Istogramma normalizzato e media globale mG.",
+      "Ricerca esaustiva su tutte le coppie i < j (e sull'ultima classe tramite k).",
+      "Per ogni partizione: σB² = Σ Pw·(mw − mG)² sulle tre classi.",
+      "Output a tre livelli: 0, 127, 255.",
+    ],
     explanations: [
+      {
+        startMatch: "vector<int> otsu2k(Mat& src){",
+        endMatch: "for(int i=0; i<256; i++) gMean += i*his[i];",
+        title: "Istogramma e media globale",
+        text: "Come in Otsu: normalizedHistogram restituisce le probabilità p(i) e gMean è la media globale mG = Σ i·p(i).",
+      },
       {
         startMatch: "vector<double> currProb(3,0.0f);",
         endMatch: "vector<int> kstar(2,0);",
-        title: "Setup N-Classi",
-        text: "Dal momento che vogliamo segmentare l'immagine con soglie multiple (es. 2 soglie = 3 classi finali), istanziamo vettori tripli per tenere conto delle probabilità sommate e delle medie accumulate di ogni classe.",
+        title: "Accumulatori per tre classi",
+        text: "Con due soglie le classi diventano tre, quindi probabilità cumulata e media cumulata sono vettori di 3 elementi (indice w = 0, 1, 2). kstar conterrà le due soglie migliori.",
       },
       {
         startMatch: "for(int i=0; i<256-2; i++){",
-        endMatch: "currProb[2] = currCumMean[2] = 0.0f;\n        }",
-        title: "Ricerca Esaustiva Combinata",
-        text: "Scorre tutte le possibili combinazioni delle due soglie (i e j) per partizionare l'istogramma, ricalcolando la varianza di separazione (sommatoria per ogni classe w: currProb * (mediaClasse - mediaGlobale)^2). Ritorna le soglie kstar[0] e kstar[1] che massimizzano lo stacco cromatico!",
+        endMatch: "currProb[1] = currCumMean[1] = 0.0f;\n    }",
+        title: "Ricerca esaustiva",
+        text: "Tre cicli annidati costruiscono le classi in modo incrementale:",
+        points: [
+          "i chiude la classe 0 (livelli 0…i): ad ogni passo si aggiunge solo il livello i.",
+          "j chiude la classe 1 (livelli i+1…j).",
+          "k accumula la classe 2 (da j+1 in poi); quando k arriva a 255 la classe copre j+1…255.",
+          "Per ogni configurazione si calcola σB² = Σw Pw·(mw − mG)², con mw = currCumMean[w] / currProb[w] (media della classe). Se supera il massimo, si memorizzano i e j.",
+          "Alla fine dei cicli interni gli accumulatori della classe 2 e della classe 1 vengono azzerati, per ripartire con la soglia successiva.",
+        ],
+        note: "La complessità è O(256³) ≈ 16 milioni di passi: va bene per 2 soglie, ma con più soglie la ricerca esaustiva diventa troppo lenta.",
+      },
+      {
+        startMatch: "void multipleThresholds(Mat& src, Mat& dst, int th1, int th2){",
+        endMatch: "dst.at<uchar>(i,j) = 127;",
+        title: "Segmentazione a tre livelli",
+        text: "dst parte nera (0). I pixel ≥ th2 diventano 255 (classe chiara), quelli ≥ th1 ma < th2 diventano 127 (classe media), gli altri restano 0 (classe scura).",
       },
     ],
     codeReference: `#include <opencv2/opencv.hpp>
@@ -664,25 +928,56 @@ int main( int argc, char** argv ) {
     id: "region_growing",
     name: "Region Growing",
     description:
-      "Algoritmo a Stack per accrescere la regione. Usa una maschera su 8 direzioni.",
+      "Il region growing segmenta l'immagine facendo «crescere» regioni a partire da un pixel seme: un vicino viene aggiunto alla regione se il suo colore è abbastanza simile a quello del pixel da cui lo si raggiunge. L'immagine viene scandita tutta, quindi ogni pixel finisce in una regione; le regioni troppo piccole sono considerate rumore.",
+    steps: [
+      "Si scandisce l'immagine; il primo pixel non ancora assegnato diventa un seme.",
+      "Partendo dal seme, uno stack esplora gli 8 vicini e aggiunge quelli con colore simile (distanza² < 204).",
+      "Se la regione supera l'1% dell'immagine riceve una nuova etichetta (1, 2, 3, …), altrimenti viene marcata come rumore (255).",
+      "Si azzera la maschera e si continua con il seme successivo.",
+    ],
     explanations: [
       {
-        startMatch: "const Point pointShift2D[8] = {",
-        endMatch: "Point( 1,-1), Point( 1, 0), Point( 1, 1)\n};",
-        title: "Mappa delle Adiacenze",
-        text: "Offre lo scarto flat delle 8 posizioni adiacenti (sopra, lati, e 4 diagonali) necessario per procedere con l'esplorazione del pixel.",
+        startMatch: "const int th = 204;",
+        endMatch: "Point( 0, 1), Point( 1,-1), Point( 1, 0), Point( 1, 1)\n};",
+        title: "Soglia e vicinato a 8",
+        text: "th è la soglia sulla distanza al quadrato tra due colori: 204 corrisponde a una distanza euclidea di circa 14 livelli. pointShift2D contiene gli 8 spostamenti (dx, dy) verso i vicini: 4 laterali e 4 diagonali (connettività a 8).",
+        note: "Lavorare con la distanza al quadrato evita di calcolare una radice per ogni confronto.",
       },
       {
-        startMatch: "while (!front.empty()) {",
+        startMatch: "void grow(const Mat src, const Mat dst, Mat& mask, Point seed) {",
+        endMatch: "front.pop();",
+        title: "Esplorazione con lo stack",
+        text: "La crescita usa uno stack esplicito (front) invece della ricorsione: su regioni grandi la ricorsione supererebbe lo stack di sistema. Si inserisce il seme; finché lo stack non è vuoto si estrae un punto (top + pop) e lo si segna nella maschera della regione corrente (mask = 1).",
+      },
+      {
+        startMatch: "for (int i=0; i<8; i++) {\n            Point neigh = center + pointShift2D[i];",
         endMatch: "front.push(neigh);",
-        title: "Navigazione Maschera Condizionata",
-        text: "Controlla ogni adiacenza alla cella attuale nello Stack: se la distanza cromatica (somma dei quadrati di R, G, B) è sotto la Soglia (th) e la cella non è già stata visitata, il compagno è idoneo e viene inserito nello stack di espansione!",
+        title: "Criterio di crescita",
+        text: "Per ognuno degli 8 vicini:",
+        points: [
+          "Se è fuori dall'immagine lo si salta.",
+          "Si calcola delta = ΔB² + ΔG² + ΔR² tra il colore del pixel corrente e quello del vicino.",
+          "Il vicino entra nello stack se delta < th, se non appartiene già a un'altra regione (dst = 0) e se non è già nella regione corrente (mask = 0).",
+        ],
+        note: "Il confronto è con il pixel corrente, non con il seme: la regione può seguire sfumature graduali e arrivare a colori molto diversi dal seme. Un pixel può essere inserito più volte nello stack prima di essere segnato, ma il risultato non cambia.",
       },
       {
-        startMatch: "if (sum(mask).val[0] > minRegionArea) {",
-        endMatch: "mask -= mask;\n            }",
-        title: "Integrazione Regione o Rumore",
-        text: "Si isolano le regioni piccolissime (che contano come rumore sfuso, colorate in grigio opzionale / scartate) e le regioni valide più grandi vengono finalmente impresse sulla 'dst' con la Label dedicata, incrementata dopo ogni area trovata.",
+        startMatch: "void regionGrowing(const Mat src, Mat& dst) {",
+        endMatch: "int label = 0;",
+        title: "Inizializzazione",
+        text: "dst è la mappa delle etichette (0 = non ancora assegnato), mask la regione in costruzione. minRegionArea = 1% dei pixel: regioni più piccole sono considerate rumore.",
+      },
+      {
+        startMatch: "for (int i=0; i<src.rows; i++)\n        for (int j=0; j<src.cols; j++)\n            if (dst.at<uchar>(i,j) == 0) {",
+        endMatch: "mask -= mask;",
+        title: "Scansione dei semi ed etichettatura",
+        text: "Ogni pixel ancora non assegnato diventa un seme e si fa crescere la sua regione. sum(mask) conta i pixel della regione (la maschera vale 1 al suo interno):",
+        points: [
+          "Regione grande: dst += mask * (++label) scrive la nuova etichetta su tutti i suoi pixel.",
+          "Regione piccola: dst += mask * 255 la marca come rumore; così non viene più usata come seme.",
+          "mask -= mask azzera la maschera per la regione successiva.",
+        ],
+        note: "Le etichette sono valori piccoli (1, 2, 3, …): mostrata con imshow, dst appare quasi nera. Per vederla meglio si può moltiplicare per una costante o assegnare un colore a ogni etichetta, come fa il visualizzatore.",
       },
     ],
     codeReference: `#include <opencv2/opencv.hpp>
@@ -755,34 +1050,61 @@ int main( int argc, char** argv ) {
     id: "split_merge",
     name: "Split and Merge",
     description:
-      "Usa una struttura QuadTree (TNode) ricorsiva per dividere l'immagine per deviazione standard del colore, e le raggruppa in base a vicinanza.",
+      "Split and Merge divide ricorsivamente l'immagine in quadranti finché ogni blocco è omogeneo (fase di split, che costruisce un QuadTree), poi riunisce i blocchi vicini omogenei (fase di merge) e colora ogni regione con il suo colore medio.",
+    steps: [
+      "Si ritaglia l'immagine al quadrato più grande con lato potenza di 2.",
+      "Split: se la deviazione standard di un blocco supera 30 e il blocco è più largo di 4 pixel, lo si divide in 4 figli.",
+      "Merge: si uniscono i figli adiacenti che risultano omogenei.",
+      "Segment: ogni regione unita viene colorata con la media dei suoi blocchi.",
+    ],
     explanations: [
       {
         startMatch: "class TNode {",
-        endMatch:
-          "void addRegion(TNode* region) { merged.push_back(region); }\n};",
-        title: "QuadTree Wrapper",
-        text: "Per segmentare lo spazio l'algoritmo fa uso di un albero a 4 settori (UL, UR, LR, LL). Questa classe incapsula ogni nodo registrando l'area, le statistiche cromatiche (mean, stdev) e le regioni parzialmente fuse.",
+        endMatch: "void addRegion(TNode* region) { merged.push_back(region); }\n};",
+        title: "Nodo del QuadTree",
+        text: "Ogni TNode rappresenta un blocco rettangolare dell'immagine:",
+        points: [
+          "region: il rettangolo; UL, UR, LR, LL: i quattro figli (nullptr se il blocco è una foglia).",
+          "mean e stddev: colore medio e deviazione standard del blocco.",
+          "merged: i nodi uniti in un'unica regione; mergedB[i] = true se il figlio i è già stato unito e non va più visitato.",
+        ],
       },
       {
         startMatch: "TNode* split(Mat& src, Rect R) {",
         endMatch: "return root;",
-        title: "Processo di SPLIT",
-        text: "Partendo dall'immagine globale, se la Deviazione Standard della zona supera 30, significa che non è un'area uniforme. Si divide il rettangolo in 4 sotto-rettangoli precisi e per ciascuno si richiama ricorsivamente SPLIT.",
+        title: "Split",
+        text: "Si crea il nodo e si calcolano media e deviazione standard del blocco con meanStdDev. L'omogeneità è misurata sommando le deviazioni standard dei tre canali (sqrt(pow(x, 2)) equivale al valore assoluto della somma).",
+        points: [
+          "Se il blocco è più largo di 4 pixel e stddev > 30 non è omogeneo: si divide in 4 sotto-rettangoli di metà lato e si richiama split su ciascuno.",
+          "Altrimenti il nodo resta una foglia.",
+          "rectangle disegna il contorno del blocco su src, per visualizzare la suddivisione.",
+        ],
+        note: "I nomi UR/LL non corrispondono alla posizione geometrica (le coordinate x e y vengono scambiate), ma poiché i blocchi sono quadrati i quattro figli coprono comunque tutto il blocco padre.",
       },
       {
         startMatch: "void merge(TNode* root) {",
-        endMatch:
-          "root->setMergedB(0); root->setMergedB(1); root->setMergedB(2); root->setMergedB(3); \n\t}\n}",
-        title: "Processo di MERGE",
-        text: "Arrivati alla profondità minima del frammento in Split, l'algoritmo risale riunendo in macro-aree le celle adiacenti che mostrano omogeneità strutturale (stddev <= 30), accorpandole nello stesso puntatore d'area Node.",
+        endMatch: "root->setMergedB(0); root->setMergedB(1); root->setMergedB(2); root->setMergedB(3); \n\t}\n}",
+        title: "Merge",
+        text: "Se il nodo era stato diviso si guardano i suoi figli:",
+        points: [
+          "Se UL e UR sono entrambi omogenei (stddev ≤ 30) vengono uniti nella stessa regione del padre e marcati come uniti.",
+          "Si controlla allo stesso modo la coppia LR e LL; le coppie non omogenee vengono esplorate ricorsivamente.",
+          "Se nessuna coppia è omogenea, merge viene richiamato su tutti e quattro i figli.",
+          "Una foglia (blocco omogeneo) è una regione a sé: aggiunge sé stessa a merged e marca tutti i figli come gestiti.",
+        ],
       },
       {
         startMatch: "void segment(Mat& src, TNode* root) {",
-        endMatch:
-          "if ( !root->getMergedB(3) ) segment( src, root->getLL() );\n\t\t}\n\t}\n}",
-        title: "Finalizzazione e Ricolorazione",
-        text: "Una volta consolidato l'albero di Merge, si naviga il grafo calcolando in automatico l'Intensity Media totale dei blocchi espansi e ricolorando il Canvas finale con la media globale dei micro-quadrati fusi.",
+        endMatch: "if ( !root->getMergedB(3) ) segment( src, root->getLL() );\n\t\t}\n\t}\n}",
+        title: "Segmentazione finale",
+        text: "Si visita l'albero. Un nodo senza regioni unite viene attraversato scendendo nei 4 figli. Un nodo con regioni unite calcola il colore medio dei nodi in merged e lo assegna a tutti i loro rettangoli; se la regione contiene più blocchi, si continua nei figli non ancora uniti.",
+      },
+      {
+        startMatch: "void splitAndMerge(Mat& src) {",
+        endMatch: "segment( srcSeg, root );",
+        title: "Funzione principale",
+        text: "Un leggero blur riduce il rumore. Il QuadTree richiede un quadrato con lato potenza di 2, quindi si calcola exp = ⌊log2(min(rows, cols))⌋ e si ritaglia l'immagine a 2^exp × 2^exp. Lo split lavora su una copia (srcSplit, dove disegna i blocchi), merge e segment su un'altra (srcSeg).",
+        note: "Il main mostra solo src: per vedere i risultati si possono aggiungere imshow di srcSplit e srcSeg dentro splitAndMerge.",
       },
     ],
     codeReference: `#include <opencv2/opencv.hpp>

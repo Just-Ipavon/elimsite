@@ -40,6 +40,144 @@ export const useOpenCv = () => {
   return status;
 };
 
+// ---------------------------------------------------------------------------
+// Porting in JS delle parti "a mano" del codice C++ di riferimento, così il
+// visualizzatore mostra esattamente ciò che fa l'algoritmo studiato e non
+// dipende da funzioni assenti in alcune build di OpenCV.js (es. floodFill).
+// ---------------------------------------------------------------------------
+
+// Canny: modulo normalizzato, fase, NMS e isteresi come in myCanny().
+const cannyFromGradients = (dxData, dyData, rows, cols, lowThresh, highThresh) => {
+  const n = rows * cols;
+  const magF = new Float32Array(n);
+  const phase = new Float32Array(n);
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < n; i += 1) {
+    const gx = dxData[i];
+    const gy = dyData[i];
+    const m = Math.hypot(gx, gy);
+    magF[i] = m;
+    if (m < min) min = m;
+    if (m > max) max = m;
+    // cv::phase(..., true) restituisce gradi in [0, 360).
+    const deg = (Math.atan2(gy, gx) * 180) / Math.PI;
+    phase[i] = deg < 0 ? deg + 360 : deg;
+  }
+
+  // normalize(mag, mag, 0, 255, NORM_MINMAX, CV_8U)
+  const mag = new Uint8Array(n);
+  const scale = max > min ? 255 / (max - min) : 0;
+  for (let i = 0; i < n; i += 1) mag[i] = Math.round((magF[i] - min) * scale);
+
+  // nonMaxSuppression
+  const nms = new Uint8Array(n);
+  for (let r = 1; r < rows - 1; r += 1) {
+    for (let c = 1; c < cols - 1; c += 1) {
+      const i = r * cols + c;
+      let ang = phase[i];
+      if (ang > 180) ang -= 360;
+      let q;
+      let p;
+      if ((ang >= -22.5 && ang <= 22.5) || ang <= -157.5 || ang >= 157.5) {
+        q = mag[i - 1];
+        p = mag[i + 1];
+      } else if ((ang > 22.5 && ang <= 67.5) || (ang >= -157.5 && ang < -112.5)) {
+        q = mag[i - cols + 1];
+        p = mag[i + cols - 1];
+      } else if ((ang > 67.5 && ang <= 112.5) || (ang >= -112.5 && ang < -67.5)) {
+        q = mag[i - cols];
+        p = mag[i + cols];
+      } else {
+        q = mag[i - cols - 1];
+        p = mag[i + cols + 1];
+      }
+      if (mag[i] >= q && mag[i] >= p) nms[i] = mag[i];
+    }
+  }
+
+  // hysteresisThreshold
+  const out = new Uint8Array(n);
+  for (let r = 1; r < rows - 1; r += 1) {
+    for (let c = 1; c < cols - 1; c += 1) {
+      const i = r * cols + c;
+      if (nms[i] < highThresh) continue;
+      out[i] = 255;
+      for (let dr = -1; dr <= 1; dr += 1) {
+        for (let dc = -1; dc <= 1; dc += 1) {
+          const j = i + dr * cols + dc;
+          if (nms[j] >= lowThresh && nms[j] < highThresh) out[j] = 255;
+        }
+      }
+    }
+  }
+  return out;
+};
+
+const NEIGHBOURS_8 = [
+  [-1, -1], [-1, 0], [-1, 1], [0, -1],
+  [0, 1], [1, -1], [1, 0], [1, 1],
+];
+
+// Region growing: stessa logica di grow()/regionGrowing() su dati RGB(A).
+// Restituisce le etichette (0 = rumore/regione piccola, 1..N = regioni).
+const regionGrowingLabels = (data, channels, rows, cols, th = 204, minAreaRatio = 0.01) => {
+  const n = rows * cols;
+  const labels = new Int32Array(n); // 0 = non assegnato, -1 = rumore
+  const inRegion = new Int32Array(n); // id della crescita che ha visitato il pixel
+  const minRegionArea = Math.floor(n * minAreaRatio);
+  const stack = [];
+  const region = [];
+  let growId = 0;
+  let label = 0;
+
+  for (let seed = 0; seed < n; seed += 1) {
+    if (labels[seed] !== 0) continue;
+    growId += 1;
+    region.length = 0;
+    stack.push(seed);
+    inRegion[seed] = growId;
+
+    while (stack.length) {
+      const center = stack.pop();
+      region.push(center);
+      const cy = Math.floor(center / cols);
+      const cx = center - cy * cols;
+      const ci = center * channels;
+      for (const [dx, dy] of NEIGHBOURS_8) {
+        const x = cx + dx;
+        const y = cy + dy;
+        if (x < 0 || x >= cols || y < 0 || y >= rows) continue;
+        const neigh = y * cols + x;
+        if (labels[neigh] !== 0 || inRegion[neigh] === growId) continue;
+        const ni = neigh * channels;
+        const d0 = data[ci] - data[ni];
+        const d1 = data[ci + 1] - data[ni + 1];
+        const d2 = data[ci + 2] - data[ni + 2];
+        if (d0 * d0 + d1 * d1 + d2 * d2 < th) {
+          inRegion[neigh] = growId;
+          stack.push(neigh);
+        }
+      }
+    }
+
+    const value = region.length > minRegionArea ? (label += 1) : -1;
+    for (const idx of region) labels[idx] = value;
+  }
+  return { labels, count: label };
+};
+
+// Colore distinto per ogni etichetta (angolo aureo sulla tinta).
+const labelColor = (label) => {
+  const h = (label * 137.508) % 360;
+  const s = 0.65;
+  const l = 0.55;
+  const k = (m) => (m + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (m) => Math.round(255 * (l - a * Math.max(-1, Math.min(k(m) - 3, 9 - k(m), 1))));
+  return [f(0), f(8), f(4)];
+};
+
 /**
  * Esegue con OpenCV.js un equivalente visivo dell'algoritmo `algoId`
  * leggendo da `imgEl` e disegnando su `canvasEl`.
@@ -60,10 +198,19 @@ export const runVisualAlgorithm = (algoId, imgEl, canvasEl) => {
     let dst = track(new cv.Mat());
 
     switch (algoId) {
-      case 'canny':
-        cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
-        cv.Canny(gray, dst, 50, 150, 3, false);
+      case 'canny': {
+        // Stessa pipeline di myCanny(src, dst, 30, 90).
+        const gauss = track(new cv.Mat());
+        cv.GaussianBlur(gray, gauss, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
+        const dx = track(new cv.Mat());
+        const dy = track(new cv.Mat());
+        cv.Sobel(gauss, dx, cv.CV_32F, 1, 0, 3, 1, 0, cv.BORDER_DEFAULT);
+        cv.Sobel(gauss, dy, cv.CV_32F, 0, 1, 3, 1, 0, cv.BORDER_DEFAULT);
+        const edges = cannyFromGradients(dx.data32F, dy.data32F, gray.rows, gray.cols, 30, 90);
+        dst = track(new cv.Mat(gray.rows, gray.cols, cv.CV_8UC1));
+        dst.data.set(edges);
         break;
+      }
 
       case 'harris': {
         const response = track(new cv.Mat());
@@ -133,21 +280,22 @@ export const runVisualAlgorithm = (algoId, imgEl, canvasEl) => {
       }
 
       case 'region_growing': {
-        dst = track(src.clone());
-        cv.cvtColor(dst, dst, cv.COLOR_RGBA2RGB);
-        const mask = track(cv.Mat.zeros(src.rows + 2, src.cols + 2, cv.CV_8U));
-        const seed = new cv.Point(Math.floor(src.cols / 2), Math.floor(src.rows / 2));
-        const diff = new cv.Scalar(20, 20, 20, 0);
-        cv.floodFill(
-          dst,
-          mask,
-          seed,
-          new cv.Scalar(255, 85, 85, 255),
-          new cv.Rect(),
-          diff,
-          diff,
-          4 | (255 << 8) | cv.FLOODFILL_FIXED_RANGE,
-        );
+        // Stessa logica di regionGrowing(): soglia 204 sulla distanza al
+        // quadrato, vicinato a 8, regioni < 1% dell'immagine considerate rumore.
+        const { labels } = regionGrowingLabels(src.data, src.channels(), src.rows, src.cols);
+        dst = track(new cv.Mat(src.rows, src.cols, cv.CV_8UC3));
+        const palette = new Map();
+        for (let i = 0; i < labels.length; i += 1) {
+          const label = labels[i];
+          let color = palette.get(label);
+          if (!color) {
+            color = label > 0 ? labelColor(label) : [40, 42, 54];
+            palette.set(label, color);
+          }
+          dst.data[i * 3] = color[0];
+          dst.data[i * 3 + 1] = color[1];
+          dst.data[i * 3 + 2] = color[2];
+        }
         break;
       }
 
