@@ -12,7 +12,7 @@ const normalize = (code) => stripComments(code).replace(/\s+/g, '');
 // La parte "algoritmica" del riferimento: tutto ciò che sta tra l'ultima
 // direttiva `using namespace` (in qualunque ordine) e il main, che nello
 // scheletro è diverso da quello di riferimento.
-const algorithmCore = (reference) => {
+export const algorithmCore = (reference) => {
   const directives = [...reference.matchAll(/using\s+namespace\s+\w+\s*;/g)];
   const last = directives.at(-1);
   const start = last ? last.index + last[0].length : 0;
