@@ -1,11 +1,17 @@
 import { useRef, useState } from 'react';
-import Editor from '@monaco-editor/react';
 import { Eye, EyeOff, Play, RotateCcw } from 'lucide-react';
 import { algorithms } from '../data/algorithms';
-import { DRACULA_THEME, baseEditorOptions, defineDraculaTheme } from '../lib/monacoTheme';
 import { verifySolution } from '../lib/verify';
 import { applyDiagnostics, diagnoseCode } from '../lib/diagnostics';
 import VerificationResult from '../components/VerificationResult';
+import AlgorithmSelect from '../components/ui/AlgorithmSelect';
+import EditorFrame from '../components/ui/EditorFrame';
+import { EditorPanel, ResultEmpty, SidePane, WorkspaceShell } from '../components/workspace/Workspace';
+
+const TABS = [
+  { id: 'result', label: 'Esito' },
+  { id: 'reference', label: 'Riferimento' },
+];
 
 const IdeArea = () => {
   const [selectedAlgo, setSelectedAlgo] = useState(algorithms[0]);
@@ -13,6 +19,8 @@ const IdeArea = () => {
   const [verificationResult, setVerificationResult] = useState(null);
   const [showReference, setShowReference] = useState(true);
   const [diagnostics, setDiagnostics] = useState([]);
+  // All'inizio il riferimento è più utile dell'esito vuoto
+  const [tab, setTab] = useState('reference');
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
 
@@ -29,8 +37,7 @@ const IdeArea = () => {
     editor.focus();
   };
 
-  const handleAlgoChange = (e) => {
-    const algo = algorithms.find((a) => a.id === e.target.value);
+  const handleAlgoChange = (algo) => {
     setSelectedAlgo(algo);
     setCode(algo.cppSkeleton);
     setVerificationResult(null);
@@ -46,126 +53,137 @@ const IdeArea = () => {
   const verifyCode = () => {
     setVerificationResult(verifySolution(code, selectedAlgo.codeReference));
     setProblems(diagnoseCode(code, selectedAlgo.codeReference, { revealReference: true }));
+    setTab('result');
   };
 
-  return (
-    <div className="lg:h-[calc(100vh-4rem)] flex flex-col p-4 md:p-6">
-      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-4">
-        <div>
-          <h1 className="text-2xl font-bold font-mono text-dracula-pink">IDE di Pratica</h1>
-          <p className="text-sm text-dracula-comment">
-            Scrivi il tuo algoritmo in C++ con il codice di riferimento a fianco, poi verificalo.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap gap-3 items-center">
-          <label htmlFor="ide-algo" className="sr-only">
-            Algoritmo
-          </label>
-          <select
-            id="ide-algo"
-            className="bg-dracula-current text-dracula-fg border border-dracula-comment rounded px-4 py-2 focus:outline-none focus:border-dracula-pink"
-            value={selectedAlgo.id}
-            onChange={handleAlgoChange}
-          >
-            {algorithms.map((algo) => (
-              <option key={algo.id} value={algo.id}>
-                {algo.name}
-              </option>
-            ))}
-          </select>
-
-          <button
-            type="button"
-            onClick={resetCode}
-            className="flex items-center space-x-2 border border-dracula-comment text-dracula-fg px-4 py-2 rounded hover:border-dracula-pink hover:text-dracula-pink transition-colors"
-          >
-            <RotateCcw size={16} aria-hidden="true" />
-            <span>Reset</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={verifyCode}
-            className="flex items-center space-x-2 bg-dracula-purple text-dracula-bg px-4 py-2 rounded font-bold hover:bg-dracula-pink transition-colors"
-          >
-            <Play size={16} aria-hidden="true" />
-            <span>Verifica</span>
-          </button>
-        </div>
+  const toolbar = (
+    <>
+      <h1 className="mr-auto font-display text-xl tracking-tight text-ink">IDE di pratica</h1>
+      <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+        <AlgorithmSelect id="ide-algo" value={selectedAlgo.id} onChange={handleAlgoChange} className="min-w-0 flex-1 sm:w-72 sm:flex-none" />
+        <button type="button" onClick={resetCode} className="btn btn-secondary" title="Ripristina lo scheletro iniziale">
+          <RotateCcw size={15} aria-hidden="true" />
+          Reset
+        </button>
+        <button type="button" onClick={verifyCode} className="btn btn-primary">
+          <Play size={15} aria-hidden="true" />
+          Verifica
+        </button>
       </div>
+    </>
+  );
 
-      <div className="flex-grow flex flex-col lg:flex-row gap-4 min-h-0">
-        {/* Colonna sinistra: il codice dello studente */}
-        <div className="w-full lg:w-1/2 h-[60vh] lg:h-full border rounded-lg overflow-hidden border-dracula-comment">
-          <Editor
-            height="100%"
-            language="cpp"
-            value={code}
-            onChange={(value) => setCode(value ?? '')}
-            beforeMount={defineDraculaTheme}
-            onMount={(editor, monaco) => {
-              editorRef.current = editor;
-              monacoRef.current = monaco;
-            }}
-            theme={DRACULA_THEME}
-            options={{ ...baseEditorOptions, padding: { top: 16 } }}
-          />
-        </div>
+  return (
+    <WorkspaceShell toolbar={toolbar}>
+      <EditorPanel
+        value={code}
+        onChange={(value) => setCode(value ?? '')}
+        onSubmit={verifyCode}
+        onMount={(editor, monaco) => {
+          editorRef.current = editor;
+          monacoRef.current = monaco;
+        }}
+      />
 
-        {/* Colonna destra: esito della verifica e codice di riferimento */}
-        <div className="w-full lg:w-1/2 lg:h-full flex flex-col gap-4 min-h-0">
-          <div className="glass rounded-lg p-4 shrink-0 max-h-[40%] overflow-y-auto">
-            <h2 className="text-lg font-bold text-dracula-cyan mb-2 border-b border-dracula-comment pb-2">Output</h2>
-            {verificationResult ? (
-              <VerificationResult
-                result={verificationResult}
-                successTitle="Verifica superata"
-                failureTitle="Verifica non superata"
-                diagnostics={diagnostics}
-                onSelectLine={goToLine}
-                showMissingLines
-              />
-            ) : (
-              <p className="text-dracula-comment text-sm">
-                In attesa... Scegli un algoritmo, scrivi il codice e premi Verifica.
-              </p>
-            )}
-          </div>
-
-          <div className="glass rounded-lg p-4 flex flex-col flex-grow min-h-0">
-            <div className="flex items-center justify-between gap-2 mb-2 border-b border-dracula-comment pb-2">
-              <h2 className="text-lg font-bold text-dracula-yellow">Codice di riferimento</h2>
+      <SidePane>
+        <section className="panel flex min-h-[26rem] flex-1 flex-col overflow-hidden lg:min-h-0">
+          <div className="flex h-11 shrink-0 items-stretch justify-between gap-3 border-b border-line pl-2 pr-3">
+            <div role="tablist" aria-label="Pannello laterale" className="flex items-stretch">
+              {TABS.map((t) => {
+                const active = tab === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="tab"
+                    id={`ide-tab-${t.id}`}
+                    aria-selected={active}
+                    aria-controls={`ide-panel-${t.id}`}
+                    onClick={() => setTab(t.id)}
+                    className={`relative -mb-px flex items-center border-b-2 px-2.5 text-[13px] font-medium transition-colors ${
+                      active ? 'border-accent text-ink' : 'border-transparent text-ink-3 hover:text-ink-2'
+                    }`}
+                  >
+                    {t.label}
+                    {t.id === 'result' && verificationResult && !active && (
+                      <>
+                        <span className="ml-1.5 h-1.5 w-1.5 rounded-full bg-accent" aria-hidden="true" />
+                        <span className="sr-only"> (disponibile)</span>
+                      </>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {tab === 'reference' && (
               <button
                 type="button"
                 onClick={() => setShowReference((v) => !v)}
                 aria-expanded={showReference}
-                className="text-xs flex items-center gap-1 text-dracula-comment hover:text-dracula-fg"
+                aria-controls="ide-panel-reference"
+                className="btn btn-ghost btn-sm self-center"
               >
                 {showReference ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}
                 {showReference ? 'Nascondi' : 'Mostra'}
               </button>
-            </div>
-            {showReference ? (
-              <div className="h-[60vh] lg:h-auto lg:flex-grow min-h-0 rounded overflow-hidden border border-dracula-current">
-                <Editor
-                  height="100%"
-                  language="cpp"
-                  value={selectedAlgo.codeReference}
-                  beforeMount={defineDraculaTheme}
-                  theme={DRACULA_THEME}
-                  options={{ ...baseEditorOptions, readOnly: true, fontSize: 13, padding: { top: 12 } }}
-                />
-              </div>
-            ) : (
-              <p className="text-sm text-dracula-comment">
-                Codice nascosto: prova a scriverlo da solo e premi Mostra quando vuoi controllare.
-              </p>
             )}
           </div>
-        </div>
-      </div>
-    </div>
+
+          {tab === 'result' ? (
+            <div
+              role="tabpanel"
+              id="ide-panel-result"
+              aria-labelledby="ide-tab-result"
+              className="min-h-0 flex-1 overflow-y-auto p-4"
+            >
+              {verificationResult ? (
+                <VerificationResult
+                  result={verificationResult}
+                  successTitle="Verifica superata"
+                  failureTitle="Verifica non superata"
+                  diagnostics={diagnostics}
+                  onSelectLine={goToLine}
+                  showMissingLines
+                />
+              ) : (
+                <ResultEmpty action="Verifica">
+                  Scegli un algoritmo, completa lo scheletro nell'editor e verifica: qui vedrai errori, avvisi e
+                  quanto il codice corrisponde al riferimento.
+                </ResultEmpty>
+              )}
+            </div>
+          ) : (
+            <div
+              role="tabpanel"
+              id="ide-panel-reference"
+              aria-labelledby="ide-tab-reference"
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              {showReference ? (
+                <>
+                  <p className="flex h-8 shrink-0 items-center border-b border-line bg-sunken/60 px-4 font-mono text-2xs text-ink-3">
+                    riferimento · {selectedAlgo.name} · sola lettura
+                  </p>
+                  <div className="min-h-[20rem] flex-1 lg:min-h-0">
+                    <EditorFrame
+                      value={selectedAlgo.codeReference}
+                      options={{ readOnly: true, fontSize: 13, lineHeight: 20, domReadOnly: true }}
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-1 items-center p-4">
+                  <p className="max-w-sm text-sm leading-relaxed text-ink-2">
+                    Codice nascosto: prova a scriverlo da solo e premi <span className="font-medium text-ink">Mostra</span>{' '}
+                    quando vuoi controllare.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      </SidePane>
+    </WorkspaceShell>
   );
 };
 

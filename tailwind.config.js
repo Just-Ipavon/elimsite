@@ -1,26 +1,36 @@
 /** @type {import('tailwindcss').Config} */
+const token = (name) => `rgb(var(--${name}) / <alpha-value>)`;
+
 export default {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
+  darkMode: ["class", '[data-theme="dark"]'],
   theme: {
     extend: {
       colors: {
-        dracula: {
-          bg: "#282a36",
-          current: "#44475a",
-          fg: "#f8f8f2",
-          comment: "#6272a4",
-          cyan: "#8be9fd",
-          green: "#50fa7b",
-          orange: "#ffb86c",
-          pink: "#ff79c6",
-          purple: "#bd93f9",
-          red: "#ff5555",
-          yellow: "#f1fa8c",
-        },
+        bg: token("bg"),
+        surface: token("surface"),
+        sunken: token("sunken"),
+        line: token("line"),
+        "line-strong": token("line-strong"),
+        ink: token("ink"),
+        "ink-2": token("ink-2"),
+        "ink-3": token("ink-3"),
+        accent: token("accent"),
+        "accent-ink": token("accent-ink"),
+        ok: token("ok"),
+        warn: token("warn"),
+        err: token("err"),
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
-        mono: ["Fira Code", "Monaco", "monospace"],
+        sans: ['"IBM Plex Sans"', "system-ui", "sans-serif"],
+        mono: ['"IBM Plex Mono"', "ui-monospace", "monospace"],
+        display: ['"Newsreader"', "Georgia", "serif"],
+      },
+      fontSize: {
+        "2xs": ["0.6875rem", { lineHeight: "1rem" }],
+      },
+      maxWidth: {
+        page: "1440px",
       },
     },
   },

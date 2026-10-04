@@ -7,9 +7,15 @@ import ExamArea from './pages/ExamArea';
 
 function App() {
   return (
-    <div className="min-h-screen bg-dracula-bg flex flex-col font-sans">
+    <div className="flex min-h-screen flex-col">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-surface focus:px-3 focus:py-2 focus:text-sm"
+      >
+        Vai al contenuto
+      </a>
       <Navbar />
-      <main className="flex-grow">
+      <main id="main" className="flex flex-1 flex-col">
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/study" element={<StudyArea />} />

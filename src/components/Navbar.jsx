@@ -1,44 +1,76 @@
 import { NavLink } from 'react-router-dom';
-import { Home, Code, BookOpen, GraduationCap } from 'lucide-react';
+import { Moon, Sun } from 'lucide-react';
+import { useTheme } from '../theme/theme';
 
 const navLinks = [
-  { name: 'Home', path: '/', icon: Home },
-  { name: 'Studio', path: '/study', icon: BookOpen },
-  { name: 'IDE', path: '/ide', icon: Code },
-  { name: 'Esame', path: '/exam', icon: GraduationCap },
+  { name: 'Studio', path: '/study' },
+  { name: 'Pratica', path: '/ide' },
+  { name: 'Esame', path: '/exam' },
 ];
 
-const Navbar = () => (
-  <nav className="glass sticky top-0 z-50 text-dracula-fg" aria-label="Navigazione principale">
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div className="flex items-center justify-between h-16">
-        <NavLink to="/" className="flex items-center space-x-3">
-          <span className="text-xl font-bold font-mono text-dracula-purple">ImageProc</span>
-          <span className="text-sm text-dracula-comment hidden md:inline-block">OpenCV C++ Study Hub</span>
-        </NavLink>
-        <div className="flex space-x-1 sm:space-x-2">
-          {navLinks.map(({ name, path, icon: Icon }) => (
-            <NavLink
-              key={path}
-              to={path}
-              end
-              aria-label={name}
-              className={({ isActive }) =>
-                `flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-dracula-purple ${
-                  isActive
-                    ? 'bg-dracula-purple bg-opacity-20 text-dracula-purple'
-                    : 'hover:bg-dracula-current hover:text-dracula-cyan'
-                }`
-              }
-            >
-              <Icon size={18} aria-hidden="true" />
-              <span className="hidden sm:inline-block">{name}</span>
-            </NavLink>
-          ))}
-        </div>
-      </div>
-    </div>
-  </nav>
+// Marchio: una griglia 3×3 di pixel con un bordo diagonale, come un'immagine elaborata.
+const Mark = () => (
+  <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" className="shrink-0">
+    {[0, 1, 2].flatMap((r) =>
+      [0, 1, 2].map((c) => (
+        <rect
+          key={`${r}${c}`}
+          x={c * 6}
+          y={r * 6}
+          width="5"
+          height="5"
+          rx="1"
+          className={c === r ? 'fill-accent' : c > r ? 'fill-ink' : 'fill-line-strong'}
+        />
+      )),
+    )}
+  </svg>
 );
+
+const Navbar = () => {
+  const { theme, toggleTheme } = useTheme();
+  const nextLabel = theme === 'dark' ? 'Passa al tema chiaro' : 'Passa al tema scuro';
+
+  return (
+    <header className="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur supports-[backdrop-filter]:bg-bg/75">
+      <nav className="mx-auto flex h-14 max-w-page items-center gap-3 px-4 sm:gap-6 md:px-6" aria-label="Navigazione principale">
+        <NavLink to="/" className="flex items-center gap-2.5 rounded-sm">
+          <Mark />
+          <span className="text-[15px] font-semibold tracking-tight text-ink">ImageProc</span>
+          <span className="hidden font-mono text-2xs text-ink-3 md:inline">OpenCV · C++</span>
+        </NavLink>
+
+        <ul className="flex h-full items-stretch sm:gap-2">
+          {navLinks.map(({ name, path }) => (
+            <li key={path} className="flex">
+              <NavLink
+                to={path}
+                className={({ isActive }) =>
+                  `relative flex items-center px-2 text-sm sm:px-2.5 transition-colors ${
+                    isActive
+                      ? 'text-ink font-medium after:absolute after:inset-x-2 after:-bottom-px sm:after:inset-x-2.5 after:h-0.5 after:bg-accent'
+                      : 'text-ink-2 hover:text-ink'
+                  }`
+                }
+              >
+                {name}
+              </NavLink>
+            </li>
+          ))}
+        </ul>
+
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="btn btn-ghost btn-sm ml-auto w-8 px-0"
+          aria-label={nextLabel}
+          title={nextLabel}
+        >
+          {theme === 'dark' ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}
+        </button>
+      </nav>
+    </header>
+  );
+};
 
 export default Navbar;
