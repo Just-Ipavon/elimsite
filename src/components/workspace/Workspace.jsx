@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FileCode2 } from 'lucide-react';
 import EditorFrame from '../ui/EditorFrame';
 import { useEditorOptions } from '../../lib/useIsDesktop';
+import { SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN, SPLIT_STEP } from '../../lib/useSplit';
 
 const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent);
 const MOD_KEY = IS_MAC ? '⌘' : 'Ctrl';
@@ -44,7 +45,16 @@ export const SidePane = ({ children, className = '' }) => (
  * Riquadro dell'editor dello studente: intestazione con nome file e stato,
  * editor a filo dei bordi. `onSubmit` viene legato a Ctrl/Cmd+Invio.
  */
-export const EditorPanel = ({ filename = 'soluzione.cpp', status, onSubmit, onMount, options, className = '', ...editorProps }) => {
+export const EditorPanel = ({
+  filename = 'soluzione.cpp',
+  status,
+  onSubmit,
+  onMount,
+  options,
+  basis,
+  className = '',
+  ...editorProps
+}) => {
   const editorOptions = useEditorOptions(options);
   // Il comando Monaco viene registrato una volta sola: passa da un ref per
   // chiamare sempre l'ultima versione del gestore (niente closure scadute).
@@ -61,7 +71,9 @@ export const EditorPanel = ({ filename = 'soluzione.cpp', status, onSubmit, onMo
   return (
     <section
       aria-label="Editor della soluzione"
-      className={`panel flex h-[55dvh] min-h-[340px] min-w-0 flex-col overflow-hidden lg:h-auto lg:min-h-0 lg:basis-[58%] lg:shrink-0 ${className}`}
+      // La larghezza su desktop passa da una variabile CSS: su mobile (pannelli impilati) non ha effetto.
+      className={`panel flex h-[55dvh] min-h-[340px] min-w-0 flex-col overflow-hidden lg:h-auto lg:min-h-0 lg:basis-[var(--editor-basis,58%)] lg:shrink-0 ${className}`}
+      style={basis ? { '--editor-basis': `${basis}%` } : undefined}
     >
       <div className="flex h-11 shrink-0 items-center justify-between gap-3 border-b border-line px-4">
         <div className="flex min-w-0 items-center gap-2">
@@ -75,6 +87,84 @@ export const EditorPanel = ({ filename = 'soluzione.cpp', status, onSubmit, onMo
         <EditorFrame onMount={handleMount} options={editorOptions} {...editorProps} />
       </div>
     </section>
+  );
+};
+
+/**
+ * Divisore trascinabile tra editor e pannello laterale, come la barra di
+ * VS Code: si trascina, doppio clic ripristina, frecce da tastiera.
+ * Occupa lo spazio del gap (margini negativi), quindi non sposta i pannelli.
+ */
+export const PanelSplitter = ({ value, onChange }) => {
+  const [dragging, setDragging] = useState(false);
+  // Punto di partenza del trascinamento: si somma lo spostamento, così la barra non scatta.
+  const start = useRef(null);
+
+  const onPointerDown = (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    start.current = { x: e.clientX, value, width: e.currentTarget.parentElement.getBoundingClientRect().width };
+    setDragging(true);
+    // Cursore e niente selezione del testo su tutta la pagina durante il trascinamento.
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  const onPointerMove = (e) => {
+    if (!dragging || !start.current) return;
+    const { x, value: from, width } = start.current;
+    onChange(from + ((e.clientX - x) / width) * 100);
+  };
+
+  const stopDrag = () => {
+    if (!dragging) return;
+    setDragging(false);
+    start.current = null;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  };
+
+  const onKeyDown = (e) => {
+    const keys = {
+      ArrowLeft: value - SPLIT_STEP,
+      ArrowRight: value + SPLIT_STEP,
+      Home: SPLIT_MIN,
+      End: SPLIT_MAX,
+    };
+    if (!(e.key in keys)) return;
+    e.preventDefault();
+    onChange(keys[e.key]);
+  };
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Ridimensiona editor e pannello laterale"
+      aria-valuenow={Math.round(value)}
+      aria-valuemin={SPLIT_MIN}
+      aria-valuemax={SPLIT_MAX}
+      tabIndex={0}
+      title="Trascina per ridimensionare · doppio clic per ripristinare"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={stopDrag}
+      onPointerCancel={stopDrag}
+      onLostPointerCapture={stopDrag}
+      onDoubleClick={() => onChange(SPLIT_DEFAULT)}
+      onKeyDown={onKeyDown}
+      className="group relative z-10 -mx-3 hidden w-3 shrink-0 cursor-col-resize touch-none focus-visible:ring-0 focus-visible:ring-offset-0 lg:block"
+    >
+      <span
+        aria-hidden="true"
+        className={`absolute inset-y-0 left-1/2 w-[3px] -translate-x-1/2 rounded-full transition-colors ${
+          dragging
+            ? 'bg-accent'
+            : 'bg-transparent delay-150 group-hover:bg-accent/60 group-focus-visible:bg-accent'
+        }`}
+      />
+    </div>
   );
 };
 

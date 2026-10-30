@@ -6,7 +6,8 @@ import { applyDiagnostics, diagnoseCode } from '../lib/diagnostics';
 import VerificationResult from '../components/VerificationResult';
 import AlgorithmSelect from '../components/ui/AlgorithmSelect';
 import EditorFrame from '../components/ui/EditorFrame';
-import { EditorPanel, ResultEmpty, SidePane, WorkspaceShell } from '../components/workspace/Workspace';
+import { EditorPanel, PanelSplitter, ResultEmpty, SidePane, WorkspaceShell } from '../components/workspace/Workspace';
+import { useSplit } from '../lib/useSplit';
 import { scrollIntoViewOnMobile, useEditorOptions } from '../lib/useIsDesktop';
 
 const TABS = [
@@ -22,6 +23,7 @@ const IdeArea = () => {
   const [diagnostics, setDiagnostics] = useState([]);
   // All'inizio il riferimento è più utile dell'esito vuoto
   const [tab, setTab] = useState('reference');
+  const [split, setSplit] = useSplit('imageproc-ide-split');
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
   const sideRef = useRef(null);
@@ -107,7 +109,9 @@ const IdeArea = () => {
           editorRef.current = editor;
           monacoRef.current = monaco;
         }}
+        basis={split}
       />
+      <PanelSplitter value={split} onChange={setSplit} />
 
       <SidePane>
         <section ref={sideRef} className="panel flex scroll-mt-[4.25rem] flex-1 flex-col overflow-hidden lg:min-h-0">

@@ -5,6 +5,11 @@ import Home from './pages/Home';
 import StudyArea from './pages/StudyArea';
 import IdeArea from './pages/IdeArea';
 import ExamArea from './pages/ExamArea';
+import WatchView from './pages/WatchView';
+import { isWatchScreen } from './lib/isWatch';
+
+// Calcolato una volta: lo schermo non cambia durante la visita.
+const onWatch = isWatchScreen();
 
 // Ogni pagina si apre dall'inizio, non alla posizione di scorrimento della precedente.
 const ScrollToTop = () => {
@@ -16,6 +21,12 @@ const ScrollToTop = () => {
 };
 
 function App() {
+  const { pathname } = useLocation();
+
+  // Vista a parte per smartwatch: niente navbar, solo il codice degli algoritmi.
+  if (pathname === '/watch') return <WatchView />;
+  if (onWatch) return <Navigate to="/watch" replace />;
+
   return (
     <div className="flex min-h-screen flex-col">
       <a
