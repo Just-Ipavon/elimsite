@@ -433,7 +433,8 @@ const splitAndMerge = (gray, size, out, { sth, tsize, mth }) => {
     return node;
   };
 
-  const similar = (a, b) => Math.abs(a.mean - b.mean) < mth;
+  // Solo foglie (blocchi omogenei) con medie vicine.
+  const similar = (a, b) => !a.children && !b.children && Math.abs(a.mean - b.mean) < mth;
   const addMerged = (root, i) => {
     root.merged.push(root.children[i]);
     root.mergedB[i] = true;

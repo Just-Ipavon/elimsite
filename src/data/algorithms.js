@@ -274,9 +274,9 @@ int main(int argc, char** argv) {
       },
       {
         startMatch: "normalize(R, R, 0, 255, NORM_MINMAX, CV_32F);",
-        endMatch: "circle(dst, Point(x, y), 5, Scalar(0), 2);",
+        endMatch: "circle(dst, Point(x, y), 5, Scalar(255), 2);",
         title: "Normalizzazione e output",
-        text: "R viene riscalata in [0, 255] restando in float, così la soglia non dipende dall'ordine di grandezza dei valori. dst è una copia di src: su di essa si disegna un cerchio nero di raggio 5 attorno a ogni pixel con R > th.",
+        text: "R viene riscalata in [0, 255] restando in float, così la soglia non dipende dall'ordine di grandezza dei valori. dst è una copia di src: su di essa si disegna un cerchio bianco (255) di raggio 5 e spessore 2 attorno a ogni pixel con R > th.",
         points: ["Point vuole (x, y) = (colonna, riga): per questo si scrive Point(x, y) mentre at<float> vuole (y, x)."],
         note: "Non c'è una non-maximum suppression: attorno a un angolo forte più pixel adiacenti superano la soglia e i cerchi si sovrappongono.",
       },
@@ -320,7 +320,7 @@ void harris(const Mat& src, Mat& dst) {
     for (int y = 0; y < R.rows; y++)
         for (int x = 0; x < R.cols; x++)
             if (R.at<float>(y, x) > th)
-                circle(dst, Point(x, y), 5, Scalar(0), 2);
+                circle(dst, Point(x, y), 5, Scalar(255), 2);
 }
 
 int main(int argc, char** argv) {
@@ -1099,6 +1099,13 @@ int main(int argc, char** argv) {
         ],
         note: "Le etichette sono valori piccoli (1, 2, 3, …): mostrata con imshow, dst appare quasi nera. Per vederla meglio si può moltiplicare per una costante o assegnare un colore a ogni etichetta, come fa il visualizzatore.",
       },
+      {
+        startMatch: "if (src.rows > 500 || src.cols > 500)",
+        endMatch: "resize(src, src, Size(0, 0), 0.5, 0.5);",
+        title: "Main · Ridimensionamento",
+        text: "Se l'immagine supera i 500 pixel in altezza o larghezza viene dimezzata prima di segmentarla: con Size(0, 0) la dimensione finale si ricava dai fattori di scala 0,5 in x e in y.",
+        points: ["Con un quarto dei pixel la crescita è molto più veloce e ci sono meno regioni da mostrare una per una con waitKey."],
+      },
     ],
     codeReference: `#include <opencv2/opencv.hpp>
 #include <stack>
@@ -1166,6 +1173,8 @@ void regionGrowing(const Mat& src, Mat& dst) {
 int main(int argc, char** argv) {
     Mat src = imread(argv[1], IMREAD_COLOR);
     if (src.empty()) return -1;
+    if (src.rows > 500 || src.cols > 500)
+        resize(src, src, Size(0, 0), 0.5, 0.5);  // dimezzo le immagini grandi (come il prof)
 
     Mat dst;
     regionGrowing(src, dst);
@@ -1210,11 +1219,11 @@ int main(int argc, char** argv) {
       },
     ],
     description:
-      "Split and Merge lavora in scala di grigi. Divide ricorsivamente l'immagine in quattro quadranti finché ogni blocco è omogeneo (fase di split, che costruisce un QuadTree), poi unisce i quadranti fratelli adiacenti con media simile (fase di merge) e colora ogni regione con la media delle medie dei suoi blocchi.",
+      "Split and Merge lavora in scala di grigi. Divide ricorsivamente l'immagine in quattro quadranti finché ogni blocco è omogeneo (fase di split, che costruisce un QuadTree), poi unisce i quadranti fratelli adiacenti che sono foglie (blocchi omogenei) con media simile (fase di merge) e colora ogni regione con la media delle medie dei suoi blocchi.",
     steps: [
       "Blur 5×5 e ritaglio al quadrato più grande con lato potenza di 2.",
       "Split: se un blocco è più largo di 8 pixel e la sua deviazione standard supera 10, lo si divide in 4 figli.",
-      "Merge: tra i 4 figli di un nodo si uniscono due adiacenti con medie che differiscono meno di 5 (ed eventualmente i loro vicini); gli altri figli si esplorano ricorsivamente.",
+      "Merge: tra i 4 figli di un nodo si uniscono due foglie adiacenti con medie che differiscono meno di 5 (ed eventualmente le foglie vicine); gli altri figli si esplorano ricorsivamente.",
       "Segment: ogni gruppo unito viene colorato con la media delle medie dei suoi blocchi.",
     ],
     explanations: [
@@ -1248,10 +1257,11 @@ int main(int argc, char** argv) {
         ],
       },
       {
-        startMatch: "bool similar(TNode* a, TNode* b) {",
+        startMatch: "// unisco solo foglie (regioni omogenee) con medie vicine",
         endMatch: "root->mergedB[i] = true;",
         title: "Funzioni di supporto",
-        text: "similar dice se due blocchi hanno medie che differiscono meno di mth. addMerged aggiunge il figlio i alla lista merged del padre e lo marca come unito.",
+        text: "similar dice se due blocchi si possono unire: devono essere entrambi foglie (nessun figlio, cioè blocchi già omogenei) e avere medie che differiscono meno di mth. addMerged aggiunge il figlio i alla lista merged del padre e lo marca come unito.",
+        note: "Il controllo sulle foglie è importante: un nodo interno ha una media «riassuntiva» di zone diverse. Se venisse unito, segment lo colorerebbe tutto di un solo valore e la sua suddivisione andrebbe persa; così invece i nodi interni vengono sempre esplorati con merge.",
       },
       {
         startMatch: "void merge(TNode* root) {",
@@ -1259,10 +1269,10 @@ int main(int argc, char** argv) {
         title: "Merge",
         text: "Una foglia è una regione a sé: aggiunge sé stessa a merged. Per un nodo diviso si guardano i figli:",
         points: [
-          "Si cerca il primo i per cui il figlio i e il successivo (next) sono simili: vengono uniti.",
+          "Si cerca il primo i per cui il figlio i e il successivo (next) sono simili (due foglie con medie vicine): vengono uniti.",
           "Il gruppo può allargarsi: se next è simile all'opposto (opp) si aggiunge anche opp, se i è simile al precedente (prev) si aggiunge prev.",
           "Il break fa sì che per ogni nodo si formi un solo gruppo.",
-          "I figli non uniti vengono esplorati ricorsivamente con merge.",
+          "I figli non uniti vengono esplorati ricorsivamente con merge: tra questi ci sono sempre tutti i nodi interni.",
         ],
         note: "Si uniscono solo fratelli dello stesso padre: blocchi adiacenti che appartengono a padri diversi restano separati anche se simili.",
       },
@@ -1325,8 +1335,10 @@ TNode* split(Mat& img, Rect R) {
     return root;
 }
 
+// unisco solo foglie (regioni omogenee) con medie vicine
 bool similar(TNode* a, TNode* b) {
-    return abs(a->mean - b->mean) < mth;
+    bool leaves = !a->children[0] && !b->children[0];
+    return leaves && abs(a->mean - b->mean) < mth;
 }
 
 void addMerged(TNode* root, int i) {
