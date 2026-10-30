@@ -25,8 +25,12 @@ npm run dev      # server di sviluppo (http://localhost:5173/elimsite/)
 npm run lint     # ESLint
 npm run build    # build di produzione in dist/
 npm run preview  # anteprima locale della build
-npm run deploy   # build + pubblicazione di dist/ su GitHub Pages (branch gh-pages)
+npm run deploy   # build + pubblicazione manuale di dist/ su GitHub Pages (branch gh-pages)
 ```
+
+Il deploy è anche automatico: a ogni push su `main` il workflow
+`.github/workflows/deploy.yml` esegue lint e build e pubblica `dist/` sul branch `gh-pages`
+(si può avviare anche a mano dalla scheda Actions).
 
 Il sito è servito sotto `/elimsite/` (vedi `base` in `vite.config.js`) e usa `HashRouter`,
 quindi funziona su GitHub Pages senza configurazioni aggiuntive.
