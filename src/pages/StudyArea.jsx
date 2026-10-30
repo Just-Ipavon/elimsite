@@ -11,6 +11,7 @@ import EditorFrame from '../components/ui/EditorFrame';
 import Panel from '../components/ui/Panel';
 import ParamControls from '../components/ParamControls';
 import ExplanationPanel from '../components/study/ExplanationPanel';
+import ConceptList from '../components/study/ConceptList';
 import ExplanationSheet from '../components/study/ExplanationSheet';
 import { useIsDesktop } from '../lib/useIsDesktop';
 
@@ -304,6 +305,9 @@ const StudyArea = () => {
             </ol>
           </section>
         )}
+
+        {/* key: cambiando algoritmo le voci aperte si richiudono. */}
+        <ConceptList key={selectedAlgo.id} keys={selectedAlgo.concepts} />
       </aside>
 
       {/* Centro: codice di riferimento */}
