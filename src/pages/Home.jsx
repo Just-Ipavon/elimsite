@@ -84,7 +84,7 @@ const Home = () => (
           {algorithms.map((algo, i) => (
             <li key={algo.id} className="border-b border-line">
               <Link
-                to="/study"
+                to={`/study?algo=${algo.id}`}
                 className="group grid grid-cols-[2rem_minmax(0,1fr)] gap-x-3 rounded-sm py-4 transition-colors hover:bg-surface sm:grid-cols-[2.5rem_minmax(0,1fr)_auto] sm:items-baseline sm:gap-x-4 sm:px-2"
               >
                 <span className="font-mono text-xs tabular-nums text-ink-3 group-hover:text-accent">

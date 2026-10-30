@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Loader2, Play } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { algorithms } from '../data/algorithms';
 import lenaSrc from '../assets/lena.png';
 import { clearCanvas, defaultParams, runVisualAlgorithm, useOpenCv } from '../lib/opencv';
@@ -70,11 +71,15 @@ const MobileHeading = ({ id, children }) => (
 );
 
 const StudyArea = () => {
-  const [selectedAlgo, setSelectedAlgo] = useState(algorithms[0]);
+  // L'algoritmo può arrivare dall'indirizzo (#/study?algo=harris), es. dalla Home.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedAlgo, setSelectedAlgo] = useState(
+    () => algorithms.find((a) => a.id === searchParams.get('algo')) ?? algorithms[0],
+  );
   const [processing, setProcessing] = useState(false);
   const [activeExplanation, setActiveExplanation] = useState(null);
   const [runError, setRunError] = useState(null);
-  const [params, setParams] = useState(() => defaultParams(algorithms[0]));
+  const [params, setParams] = useState(() => defaultParams(selectedAlgo));
   const [hasOutput, setHasOutput] = useState(false);
   const [tab, setTab] = useState('explanation');
   const [stepsOpen, setStepsOpen] = useState(false);
@@ -176,6 +181,8 @@ const StudyArea = () => {
 
   const handleAlgoChange = (algo) => {
     setSelectedAlgo(algo);
+    // L'indirizzo segue la scelta: ricaricando o condividendo il link si riapre lo stesso algoritmo.
+    setSearchParams({ algo: algo.id }, { replace: true });
     setParams(defaultParams(algo));
     setHasOutput(false);
     setActiveExplanation(null);
