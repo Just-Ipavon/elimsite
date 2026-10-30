@@ -108,42 +108,32 @@ const cannyFromGradients = (dxData, dyData, rows, cols, lowThresh, highThresh) =
   const scale = max > min ? 255 / (max - min) : 0;
   for (let i = 0; i < n; i += 1) mag[i] = Math.round((magF[i] - min) * scale);
 
-  // nonMaxSuppression
+  // nonMaxSuppression: (dy, dx) è il passo verso il vicino lungo il gradiente.
   const nms = new Uint8Array(n);
-  for (let r = 1; r < rows - 1; r += 1) {
-    for (let c = 1; c < cols - 1; c += 1) {
-      const i = r * cols + c;
-      const a = phase[i] >= 180 ? phase[i] - 180 : phase[i];
-      let q;
-      let p;
-      if (a < 22.5 || a >= 157.5) {
-        q = mag[i - 1];
-        p = mag[i + 1];
-      } else if (a < 67.5) {
-        q = mag[i - cols - 1];
-        p = mag[i + cols + 1];
-      } else if (a < 112.5) {
-        q = mag[i - cols];
-        p = mag[i + cols];
-      } else {
-        q = mag[i - cols + 1];
-        p = mag[i + cols - 1];
-      }
-      if (mag[i] >= q && mag[i] >= p) nms[i] = mag[i];
+  for (let y = 1; y < rows - 1; y += 1) {
+    for (let x = 1; x < cols - 1; x += 1) {
+      const i = y * cols + x;
+      const a = phase[i] % 180;
+      let step;
+      if (a < 22.5 || a >= 157.5) step = 1;
+      else if (a < 67.5) step = cols + 1;
+      else if (a < 112.5) step = cols;
+      else step = cols - 1;
+      if (mag[i] >= mag[i + step] && mag[i] >= mag[i - step]) nms[i] = mag[i];
     }
   }
 
-  // hysteresis
+  // hysteresis: forti (> hth) e vicini deboli (lth < v < hth).
   const out = new Uint8Array(n);
-  for (let r = 1; r < rows - 1; r += 1) {
-    for (let c = 1; c < cols - 1; c += 1) {
-      const i = r * cols + c;
-      if (nms[i] < highThresh) continue;
+  for (let y = 1; y < rows - 1; y += 1) {
+    for (let x = 1; x < cols - 1; x += 1) {
+      const i = y * cols + x;
+      if (nms[i] <= highThresh) continue;
       out[i] = 255;
-      for (let dr = -1; dr <= 1; dr += 1) {
-        for (let dc = -1; dc <= 1; dc += 1) {
-          const j = i + dr * cols + dc;
-          if (nms[j] >= lowThresh && nms[j] < highThresh) out[j] = 255;
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (let dx = -1; dx <= 1; dx += 1) {
+          const j = i + dy * cols + dx;
+          if (nms[j] > lowThresh && nms[j] < highThresh) out[j] = 255;
         }
       }
     }
@@ -151,57 +141,56 @@ const cannyFromGradients = (dxData, dyData, rows, cols, lowThresh, highThresh) =
   return out;
 };
 
-const NEIGHBOURS_8 = [
-  [-1, -1], [-1, 0], [-1, 1], [0, -1],
-  [0, 1], [1, -1], [1, 0], [1, 1],
-];
-
 // Region growing: stessa logica di grow()/regionGrowing() su dati RGB(A).
-// Restituisce le etichette (0 = rumore/regione piccola, 1..N = regioni).
-const regionGrowingLabels = (data, channels, rows, cols, th = 204, minAreaRatio = 0.01) => {
+// Restituisce le etichette (0 = non visitato, -1 = ignorato, 1..N = regioni).
+const MAX_REGIONS = 100;
+const regionGrowingLabels = (data, channels, rows, cols, th = 200, minAreaRatio = 0.01) => {
   const n = rows * cols;
-  const labels = new Int32Array(n); // 0 = non assegnato, -1 = rumore
-  const inRegion = new Int32Array(n); // id della crescita che ha visitato il pixel
+  const labels = new Int32Array(n);
+  const mask = new Int32Array(n); // id della crescita che ha visitato il pixel
   const minRegionArea = Math.floor(n * minAreaRatio);
-  const stack = [];
+  const front = [];
   const region = [];
   let growId = 0;
-  let label = 0;
+  let label = 1;
 
   for (let seed = 0; seed < n; seed += 1) {
     if (labels[seed] !== 0) continue;
     growId += 1;
     region.length = 0;
-    stack.push(seed);
-    inRegion[seed] = growId;
+    front.push(seed);
+    mask[seed] = growId;
 
-    while (stack.length) {
-      const center = stack.pop();
-      region.push(center);
-      const cy = Math.floor(center / cols);
-      const cx = center - cy * cols;
-      const ci = center * channels;
-      for (const [dx, dy] of NEIGHBOURS_8) {
-        const x = cx + dx;
-        const y = cy + dy;
-        if (x < 0 || x >= cols || y < 0 || y >= rows) continue;
-        const neigh = y * cols + x;
-        if (labels[neigh] !== 0 || inRegion[neigh] === growId) continue;
-        const ni = neigh * channels;
-        const d0 = data[ci] - data[ni];
-        const d1 = data[ci + 1] - data[ni + 1];
-        const d2 = data[ci + 2] - data[ni + 2];
-        if (d0 * d0 + d1 * d1 + d2 * d2 < th) {
-          inRegion[neigh] = growId;
-          stack.push(neigh);
+    while (front.length) {
+      const p = front.pop();
+      region.push(p);
+      const py = Math.floor(p / cols);
+      const px = p - py * cols;
+      const pi = p * channels;
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (let dx = -1; dx <= 1; dx += 1) {
+          const x = px + dx;
+          const y = py + dy;
+          if (x < 0 || y < 0 || x >= cols || y >= rows) continue;
+          const q = y * cols + x;
+          if (labels[q] !== 0 || mask[q] === growId) continue;
+          const qi = q * channels;
+          const d0 = data[pi] - data[qi];
+          const d1 = data[pi + 1] - data[qi + 1];
+          const d2 = data[pi + 2] - data[qi + 2];
+          if (d0 * d0 + d1 * d1 + d2 * d2 < th) {
+            mask[q] = growId;
+            front.push(q);
+          }
         }
       }
     }
 
-    const value = region.length > minRegionArea ? (label += 1) : -1;
-    for (const idx of region) labels[idx] = value;
+    const valid = region.length > minRegionArea;
+    for (const idx of region) labels[idx] = valid ? label : -1;
+    if (valid && ++label > MAX_REGIONS) break;
   }
-  return { labels, count: label };
+  return labels;
 };
 
 // Colore distinto per ogni etichetta (angolo aureo sulla tinta).
@@ -215,41 +204,41 @@ const labelColor = (label) => {
   return [f(0), f(8), f(4)];
 };
 
-// Harris: stessa sequenza di harris() (Sobel 11, blur 7×7, R = det − k·trace²).
+// Harris: stessa sequenza di harris() (Sobel 3×3, blur 7×7 σ = 2, R = det − k·trace²).
 // Restituisce R normalizzata in [0, 255].
 const harrisResponse = (cv, gray, track, k) => {
   const dx = track(new cv.Mat());
   const dy = track(new cv.Mat());
-  cv.Sobel(gray, dx, cv.CV_32F, 1, 0, 11, 1, 0, cv.BORDER_DEFAULT);
-  cv.Sobel(gray, dy, cv.CV_32F, 0, 1, 11, 1, 0, cv.BORDER_DEFAULT);
+  cv.Sobel(gray, dx, cv.CV_32F, 1, 0, 3, 1, 0, cv.BORDER_DEFAULT);
+  cv.Sobel(gray, dy, cv.CV_32F, 0, 1, 3, 1, 0, cv.BORDER_DEFAULT);
 
   const n = gray.rows * gray.cols;
   const dx2 = track(new cv.Mat(gray.rows, gray.cols, cv.CV_32F));
   const dy2 = track(new cv.Mat(gray.rows, gray.cols, cv.CV_32F));
-  const dxdy = track(new cv.Mat(gray.rows, gray.cols, cv.CV_32F));
+  const dxy = track(new cv.Mat(gray.rows, gray.cols, cv.CV_32F));
   for (let i = 0; i < n; i += 1) {
     const gx = dx.data32F[i];
     const gy = dy.data32F[i];
     dx2.data32F[i] = gx * gx;
     dy2.data32F[i] = gy * gy;
-    dxdy.data32F[i] = gx * gy;
+    dxy.data32F[i] = gx * gy;
   }
 
-  const c00 = track(new cv.Mat());
-  const c11 = track(new cv.Mat());
-  const c01 = track(new cv.Mat());
+  const sx2 = track(new cv.Mat());
+  const sy2 = track(new cv.Mat());
+  const sxy = track(new cv.Mat());
   const size = new cv.Size(7, 7);
-  cv.GaussianBlur(dx2, c00, size, 2, 0, cv.BORDER_DEFAULT);
-  cv.GaussianBlur(dy2, c11, size, 0, 2, cv.BORDER_DEFAULT);
-  cv.GaussianBlur(dxdy, c01, size, 2, 2, cv.BORDER_DEFAULT);
+  cv.GaussianBlur(dx2, sx2, size, 2, 2, cv.BORDER_DEFAULT);
+  cv.GaussianBlur(dy2, sy2, size, 2, 2, cv.BORDER_DEFAULT);
+  cv.GaussianBlur(dxy, sxy, size, 2, 2, cv.BORDER_DEFAULT);
 
   const R = new Float64Array(n);
   let min = Infinity;
   let max = -Infinity;
   for (let i = 0; i < n; i += 1) {
-    const a = c00.data32F[i];
-    const b = c11.data32F[i];
-    const c = c01.data32F[i];
+    const a = sx2.data32F[i];
+    const b = sy2.data32F[i];
+    const c = sxy.data32F[i];
     const trace = a + b;
     const r = a * b - c * c - k * trace * trace;
     R[i] = r;
@@ -261,21 +250,21 @@ const harrisResponse = (cv, gray, track, k) => {
   return R;
 };
 
-// Hough rette: stesso accumulatore di houghLines() (θ indicizzato 0..179 = θ−90°).
+// Hough rette: stesso accumulatore di houghLines() (righe = ρ + maxDist, colonne = θ in gradi).
 const houghLinesVotes = (edges, rows, cols) => {
   const maxDist = Math.floor(Math.hypot(rows, cols));
   const votes = new Int32Array((2 * maxDist + 1) * 180);
   const cosT = new Float64Array(180);
   const sinT = new Float64Array(180);
   for (let t = 0; t < 180; t += 1) {
-    cosT[t] = Math.cos(((t - 90) * Math.PI) / 180);
-    sinT[t] = Math.sin(((t - 90) * Math.PI) / 180);
+    cosT[t] = Math.cos((t * Math.PI) / 180);
+    sinT[t] = Math.sin((t * Math.PI) / 180);
   }
-  for (let x = 0; x < rows; x += 1) {
-    for (let y = 0; y < cols; y += 1) {
-      if (edges[x * cols + y] !== 255) continue;
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      if (edges[y * cols + x] !== 255) continue;
       for (let t = 0; t < 180; t += 1) {
-        const rho = Math.round(y * cosT[t] + x * sinT[t]) + maxDist;
+        const rho = Math.round(x * cosT[t] + y * sinT[t]) + maxDist;
         votes[rho * 180 + t] += 1;
       }
     }
@@ -283,81 +272,208 @@ const houghLinesVotes = (edges, rows, cols) => {
   return { votes, maxDist };
 };
 
-// Otsu a due soglie: stessi cicli di otsu2k().
-const otsu2kThresholds = (grayData) => {
-  const his = new Float64Array(256);
-  for (let i = 0; i < grayData.length; i += 1) his[grayData[i]] += 1;
-  for (let i = 0; i < 256; i += 1) his[i] /= grayData.length;
-  let gMean = 0;
-  for (let i = 0; i < 256; i += 1) gMean += i * his[i];
-
-  const prob = [0, 0, 0];
-  const cum = [0, 0, 0];
-  let maxVar = 0;
-  const kstar = [0, 0];
-  for (let i = 0; i < 256 - 2; i += 1) {
-    prob[0] += his[i];
-    cum[0] += i * his[i];
-    for (let j = i + 1; j < 256 - 1; j += 1) {
-      prob[1] += his[j];
-      cum[1] += j * his[j];
-      for (let k = j + 1; k < 256; k += 1) {
-        prob[2] += his[k];
-        cum[2] += k * his[k];
-        let v = 0;
-        for (let w = 0; w < 3; w += 1) v += prob[w] * (cum[w] / prob[w] - gMean) ** 2;
-        if (v > maxVar) {
-          maxVar = v;
-          kstar[0] = i;
-          kstar[1] = j;
+// Hough cerchi: stesso accumulatore 3D di houghCircles() (b, a, r − rMin).
+// Gli spostamenti (r·cos θ, r·sin θ) vengono calcolati una volta per raggio.
+const houghCirclesVotes = (edges, rows, cols, rMin, rMax) => {
+  const radii = Math.max(0, rMax - rMin + 1);
+  const votes = new Int32Array(rows * cols * radii);
+  for (let ri = 0; ri < radii; ri += 1) {
+    const r = rMin + ri;
+    const offA = new Int32Array(360);
+    const offB = new Int32Array(360);
+    for (let t = 0; t < 360; t += 1) {
+      const theta = (t * Math.PI) / 180;
+      offA[t] = Math.round(-r * Math.cos(theta));
+      offB[t] = Math.round(-r * Math.sin(theta));
+    }
+    for (let y = 0; y < rows; y += 1) {
+      for (let x = 0; x < cols; x += 1) {
+        if (edges[y * cols + x] !== 255) continue;
+        for (let t = 0; t < 360; t += 1) {
+          const a = x + offA[t];
+          const b = y + offB[t];
+          if (a >= 0 && a < cols && b >= 0 && b < rows) votes[(b * cols + a) * radii + ri] += 1;
         }
       }
-      prob[2] = 0;
-      cum[2] = 0;
     }
-    prob[1] = 0;
-    cum[1] = 0;
+  }
+  return { votes, radii };
+};
+
+// Istogramma normalizzato come normalizedHistogram().
+const normalizedHistogram = (grayData) => {
+  const p = new Float64Array(256);
+  for (let i = 0; i < grayData.length; i += 1) p[grayData[i]] += 1;
+  for (let i = 0; i < 256; i += 1) p[i] /= grayData.length;
+  return p;
+};
+
+// Otsu: stessi accumulatori di otsu().
+const otsuThreshold = (grayData) => {
+  const p = normalizedHistogram(grayData);
+  let mG = 0;
+  for (let i = 0; i < 256; i += 1) mG += i * p[i];
+  let P1 = 0;
+  let m = 0;
+  let maxVar = 0;
+  let kstar = 0;
+  for (let k = 0; k < 256; k += 1) {
+    P1 += p[k];
+    m += k * p[k];
+    if (P1 <= 0 || P1 >= 1) continue;
+    const sigmaB2 = (mG * P1 - m) ** 2 / (P1 * (1 - P1));
+    if (sigmaB2 > maxVar) {
+      maxVar = sigmaB2;
+      kstar = k;
+    }
   }
   return kstar;
 };
 
-// Split (QuadTree): divide finché la somma delle deviazioni standard dei
-// canali supera la soglia e il blocco è più largo di 4 pixel; ogni foglia
-// viene colorata con il suo colore medio.
-const quadTreeSplit = (data, channels, size, out, thStd) => {
-  const visit = (x0, y0, s) => {
-    const sum = [0, 0, 0];
-    const sq = [0, 0, 0];
-    for (let y = y0; y < y0 + s; y += 1) {
-      for (let x = x0; x < x0 + s; x += 1) {
-        const p = (y * size + x) * channels;
-        for (let c = 0; c < 3; c += 1) {
-          sum[c] += data[p + c];
-          sq[c] += data[p + c] * data[p + c];
+// Otsu a due soglie: stessi cicli di otsu2k() (terza classe per differenza).
+const otsu2kThresholds = (grayData) => {
+  const p = normalizedHistogram(grayData);
+  let mG = 0;
+  for (let i = 0; i < 256; i += 1) mG += i * p[i];
+
+  let maxVar = 0;
+  const kstar = [0, 0];
+  let P1 = 0;
+  let m1 = 0;
+  for (let k1 = 0; k1 < 256 - 2; k1 += 1) {
+    P1 += p[k1];
+    m1 += k1 * p[k1];
+    let P2 = 0;
+    let m2 = 0;
+    for (let k2 = k1 + 1; k2 < 256 - 1; k2 += 1) {
+      P2 += p[k2];
+      m2 += k2 * p[k2];
+      const P = [P1, P2, 1 - P1 - P2];
+      const m = [m1, m2, mG - m1 - m2];
+      let sigmaB2 = 0;
+      for (let w = 0; w < 3; w += 1) if (P[w] > 0) sigmaB2 += P[w] * (m[w] / P[w] - mG) ** 2;
+      if (sigmaB2 > maxVar) {
+        maxVar = sigmaB2;
+        kstar[0] = k1;
+        kstar[1] = k2;
+      }
+    }
+  }
+  return kstar;
+};
+
+// K-means: stessi passi di kmeansSegmentation() su dati RGB(A). I centri
+// iniziali sono casuali come nel C++, quindi ogni esecuzione può cambiare.
+const MAX_KMEANS_ITERATIONS = 100;
+const kmeansColors = (data, channels, n, k, th = 0.5) => {
+  const centers = Array.from({ length: k }, () => {
+    const i = Math.floor(Math.random() * n) * channels;
+    return [data[i], data[i + 1], data[i + 2]];
+  });
+  const labels = new Int32Array(n);
+  let shift = Infinity;
+  for (let iter = 0; shift > th && iter < MAX_KMEANS_ITERATIONS; iter += 1) {
+    for (let i = 0; i < n; i += 1) {
+      const p = i * channels;
+      let minDist = Infinity;
+      for (let c = 0; c < k; c += 1) {
+        const d = Math.hypot(data[p] - centers[c][0], data[p + 1] - centers[c][1], data[p + 2] - centers[c][2]);
+        if (d < minDist) {
+          minDist = d;
+          labels[i] = c;
         }
       }
     }
-    const n = s * s;
-    const mean = sum.map((v) => v / n);
-    const std = sq.reduce((acc, v, c) => acc + Math.sqrt(Math.max(0, v / n - mean[c] * mean[c])), 0);
-    if (s > 4 && std > thStd) {
-      const h = s / 2;
-      visit(x0, y0, h);
-      visit(x0 + h, y0, h);
-      visit(x0, y0 + h, h);
-      visit(x0 + h, y0 + h, h);
-      return;
+
+    const sum = Array.from({ length: k }, () => [0, 0, 0]);
+    const count = new Int32Array(k);
+    for (let i = 0; i < n; i += 1) {
+      const c = labels[i];
+      const p = i * channels;
+      sum[c][0] += data[p];
+      sum[c][1] += data[p + 1];
+      sum[c][2] += data[p + 2];
+      count[c] += 1;
     }
+    shift = 0;
+    for (let c = 0; c < k; c += 1) {
+      if (count[c] === 0) continue;
+      const next = sum[c].map((v) => v / count[c]);
+      shift += Math.hypot(next[0] - centers[c][0], next[1] - centers[c][1], next[2] - centers[c][2]);
+      centers[c] = next;
+    }
+    shift /= k;
+  }
+  return { labels, centers };
+};
+
+// Split and Merge: stessi split()/merge()/segment() su un'immagine in grigio
+// quadrata con lato potenza di 2. Scrive in `out` l'immagine segmentata.
+const splitAndMerge = (gray, size, out, { sth, tsize, mth }) => {
+  const split = (x0, y0, s) => {
+    let sum = 0;
+    let sq = 0;
     for (let y = y0; y < y0 + s; y += 1) {
       for (let x = x0; x < x0 + s; x += 1) {
-        const p = (y * size + x) * 3;
-        out[p] = mean[0];
-        out[p + 1] = mean[1];
-        out[p + 2] = mean[2];
+        const v = gray[y * size + x];
+        sum += v;
+        sq += v * v;
       }
     }
+    const n = s * s;
+    const mean = sum / n;
+    const node = { x0, y0, s, mean, stddev: Math.sqrt(Math.max(0, sq / n - mean * mean)), children: null };
+    node.merged = [];
+    node.mergedB = [false, false, false, false];
+    if (s > tsize && node.stddev > sth) {
+      const h = s / 2;
+      // Ordine circolare: alto sx, alto dx, basso dx, basso sx.
+      node.children = [split(x0, y0, h), split(x0 + h, y0, h), split(x0 + h, y0 + h, h), split(x0, y0 + h, h)];
+    }
+    return node;
   };
-  visit(0, 0, size);
+
+  const similar = (a, b) => Math.abs(a.mean - b.mean) < mth;
+  const addMerged = (root, i) => {
+    root.merged.push(root.children[i]);
+    root.mergedB[i] = true;
+  };
+
+  const merge = (root) => {
+    if (!root.children) {
+      root.merged.push(root);
+      return;
+    }
+    const ch = root.children;
+    for (let i = 0; i < 4; i += 1) {
+      const next = (i + 1) % 4;
+      const opp = (i + 2) % 4;
+      const prev = (i + 3) % 4;
+      if (similar(ch[i], ch[next])) {
+        addMerged(root, i);
+        addMerged(root, next);
+        if (similar(ch[next], ch[opp])) addMerged(root, opp);
+        if (similar(ch[i], ch[prev])) addMerged(root, prev);
+        break;
+      }
+    }
+    for (let i = 0; i < 4; i += 1) if (!root.mergedB[i]) merge(ch[i]);
+  };
+
+  const segment = (root) => {
+    if (root.merged.length) {
+      const val = Math.trunc(root.merged.reduce((acc, node) => acc + node.mean, 0) / root.merged.length);
+      for (const { x0, y0, s } of root.merged) {
+        for (let y = y0; y < y0 + s; y += 1) out.fill(val, y * size + x0, y * size + x0 + s);
+      }
+    }
+    if (!root.children) return;
+    for (let i = 0; i < 4; i += 1) if (!root.mergedB[i]) segment(root.children[i]);
+  };
+
+  const root = split(0, 0, size);
+  merge(root);
+  segment(root);
 };
 
 // Tutti gli algoritmi lavorano su una copia 256×256 di Lena, così il risultato
@@ -395,15 +511,34 @@ export const runVisualAlgorithm = (algoId, imgEl, canvasEl, params = {}) => {
     const cols = gray.cols;
     let dst = track(new cv.Mat());
 
+    // GaussianBlur + Canny di OpenCV, come nei due Hough.
+    const cannyEdges = (low, high) => {
+      const gauss = track(new cv.Mat());
+      cv.GaussianBlur(gray, gauss, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
+      const edges = track(new cv.Mat());
+      cv.Canny(gauss, edges, low, high, 3, false);
+      return edges.data;
+    };
+    // Copia a colori di Lena in grigio, su cui disegnare in colore.
+    const grayCanvas = () => {
+      const out = track(new cv.Mat());
+      cv.cvtColor(gray, out, cv.COLOR_GRAY2RGBA);
+      return out;
+    };
+    const blurredGray = (ksize) => {
+      const out = track(new cv.Mat());
+      cv.GaussianBlur(gray, out, new cv.Size(ksize, ksize), 0, 0, cv.BORDER_DEFAULT);
+      return out;
+    };
+
     switch (algoId) {
       case 'canny': {
-        const gauss = track(new cv.Mat());
-        cv.GaussianBlur(gray, gauss, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
+        const gauss = blurredGray(5);
         const dx = track(new cv.Mat());
         const dy = track(new cv.Mat());
         cv.Sobel(gauss, dx, cv.CV_32F, 1, 0, 3, 1, 0, cv.BORDER_DEFAULT);
         cv.Sobel(gauss, dy, cv.CV_32F, 0, 1, 3, 1, 0, cv.BORDER_DEFAULT);
-        const edges = cannyFromGradients(dx.data32F, dy.data32F, rows, cols, p('low', 30), p('high', 90));
+        const edges = cannyFromGradients(dx.data32F, dy.data32F, rows, cols, p('low', 40), p('high', 90));
         dst = track(new cv.Mat(rows, cols, cv.CV_8UC1));
         dst.data.set(edges);
         break;
@@ -412,11 +547,10 @@ export const runVisualAlgorithm = (algoId, imgEl, canvasEl, params = {}) => {
       case 'harris': {
         const R = harrisResponse(cv, gray, track, p('k', 0.04));
         const th = p('threshold', 100);
-        dst = track(new cv.Mat());
-        cv.cvtColor(gray, dst, cv.COLOR_GRAY2RGBA);
+        dst = grayCanvas();
         const color = new cv.Scalar(255, 85, 85, 255);
-        // Come circleCorners() (R > soglia), ma per leggibilità si disegna un
-        // solo cerchio per angolo: il massimo locale nell'intorno 5×5.
+        // Come harris() (R > th), ma per leggibilità si disegna un solo
+        // cerchio per angolo: il massimo locale nell'intorno 5×5.
         for (let y = 2; y < rows - 2; y += 1) {
           for (let x = 2; x < cols - 2; x += 1) {
             const v = R[y * cols + x];
@@ -437,65 +571,71 @@ export const runVisualAlgorithm = (algoId, imgEl, canvasEl, params = {}) => {
       }
 
       case 'hough_circles': {
-        dst = track(src.clone());
-        const circles = track(new cv.Mat());
-        cv.medianBlur(gray, gray, 5);
-        cv.HoughCircles(gray, circles, cv.HOUGH_GRADIENT, 1, 20, 100, p('votes', 30), p('minRadius', 10), p('maxRadius', 40));
+        const rMin = p('minRadius', 22);
+        const rMax = p('maxRadius', 25);
+        const th = p('votes', 123);
+        const edges = cannyEdges(100, 112);
+        const { votes, radii } = houghCirclesVotes(edges, rows, cols, rMin, rMax);
+        dst = grayCanvas();
         const color = new cv.Scalar(255, 0, 255, 255);
-        for (let i = 0; i < circles.cols; i += 1) {
-          const x = circles.data32F[i * 3];
-          const y = circles.data32F[i * 3 + 1];
-          const radius = circles.data32F[i * 3 + 2];
-          cv.circle(dst, new cv.Point(x, y), radius, color, 2);
-        }
-        break;
-      }
-
-      case 'hough_lines': {
-        const blurred = track(new cv.Mat());
-        cv.GaussianBlur(gray, blurred, new cv.Size(3, 3), 0, 0, cv.BORDER_DEFAULT);
-        const edges = track(new cv.Mat());
-        cv.Canny(blurred, edges, p('cannyLow', 50), p('cannyHigh', 150), 3, false);
-        const { votes, maxDist } = houghLinesVotes(edges.data, rows, cols);
-        dst = track(src.clone());
-        const color = new cv.Scalar(255, 0, 0, 255);
-        const th = p('votes', 100);
-        for (let i = 0; i < 2 * maxDist + 1; i += 1) {
-          for (let j = 0; j < 180; j += 1) {
-            if (votes[i * 180 + j] < th) continue;
-            const rho = i - maxDist;
-            const rad = ((j - 90) * Math.PI) / 180;
-            const x0 = Math.round(rho * Math.cos(rad));
-            const y0 = Math.round(rho * Math.sin(rad));
-            const pt1 = new cv.Point(Math.round(x0 - 1000 * Math.sin(rad)), Math.round(y0 + 1000 * Math.cos(rad)));
-            const pt2 = new cv.Point(Math.round(x0 + 1000 * Math.sin(rad)), Math.round(y0 - 1000 * Math.cos(rad)));
-            cv.line(dst, pt1, pt2, color, 1);
+        for (let ri = 0; ri < radii; ri += 1) {
+          for (let b = 0; b < rows; b += 1) {
+            for (let a = 0; a < cols; a += 1) {
+              if (votes[(b * cols + a) * radii + ri] < th) continue;
+              const center = new cv.Point(a, b);
+              cv.circle(dst, center, 2, color, 1);
+              cv.circle(dst, center, rMin + ri, color, 1);
+            }
           }
         }
         break;
       }
 
-      case 'otsu':
-        cv.threshold(gray, dst, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
+      case 'hough_lines': {
+        const edges = cannyEdges(p('cannyLow', 90), p('cannyHigh', 160));
+        const { votes, maxDist } = houghLinesVotes(edges, rows, cols);
+        dst = grayCanvas();
+        const color = new cv.Scalar(255, 0, 0, 255);
+        const th = p('votes', 90);
+        for (let r = 0; r < 2 * maxDist + 1; r += 1) {
+          for (let t = 0; t < 180; t += 1) {
+            if (votes[r * 180 + t] < th) continue;
+            const rho = r - maxDist;
+            const theta = (t * Math.PI) / 180;
+            const x0 = rho * Math.cos(theta);
+            const y0 = rho * Math.sin(theta);
+            const p1 = new cv.Point(Math.round(x0 - maxDist * Math.sin(theta)), Math.round(y0 + maxDist * Math.cos(theta)));
+            const p2 = new cv.Point(Math.round(x0 + maxDist * Math.sin(theta)), Math.round(y0 - maxDist * Math.cos(theta)));
+            cv.line(dst, p1, p2, color, 1);
+          }
+        }
         break;
+      }
+
+      case 'otsu': {
+        const gauss = blurredGray(3);
+        cv.threshold(gauss, dst, otsuThreshold(gauss.data), 255, cv.THRESH_BINARY);
+        break;
+      }
 
       case 'otsu2k': {
-        const [th1, th2] = otsu2kThresholds(gray.data);
+        const gauss = blurredGray(3);
+        const [k1, k2] = otsu2kThresholds(gauss.data);
         dst = track(new cv.Mat(rows, cols, cv.CV_8UC1));
-        for (let i = 0; i < gray.data.length; i += 1) {
-          const v = gray.data[i];
-          dst.data[i] = v >= th2 ? 255 : v >= th1 ? 127 : 0;
+        for (let i = 0; i < gauss.data.length; i += 1) {
+          const v = gauss.data[i];
+          dst.data[i] = v > k2 ? 255 : v > k1 ? 127 : 0;
         }
         break;
       }
 
       case 'region_growing': {
-        const { labels } = regionGrowingLabels(
+        const labels = regionGrowingLabels(
           src.data,
           src.channels(),
           rows,
           cols,
-          p('threshold', 204),
+          p('threshold', 200),
           p('minArea', 1) / 100,
         );
         dst = track(new cv.Mat(rows, cols, cv.CV_8UC3));
@@ -515,28 +655,24 @@ export const runVisualAlgorithm = (algoId, imgEl, canvasEl, params = {}) => {
       }
 
       case 'kmeans': {
-        const rgb = track(new cv.Mat());
-        cv.cvtColor(src, rgb, cv.COLOR_RGBA2RGB);
-        const pixels = rows * cols;
-        const samples32 = track(new cv.Mat(pixels, 3, cv.CV_32F));
-        for (let i = 0; i < pixels * 3; i += 1) samples32.data32F[i] = rgb.data[i];
-        const labels = track(new cv.Mat());
-        const centers = track(new cv.Mat());
-        const criteria = new cv.TermCriteria(cv.TermCriteria_EPS + cv.TermCriteria_MAX_ITER, 10, 1.0);
-        cv.kmeans(samples32, p('k', 6), labels, criteria, 3, cv.KMEANS_PP_CENTERS, centers);
+        const channels = src.channels();
+        const { labels, centers } = kmeansColors(src.data, channels, rows * cols, p('k', 6));
         dst = track(new cv.Mat(rows, cols, cv.CV_8UC3));
-        for (let i = 0; i < labels.rows; i += 1) {
-          const label = labels.intAt(i, 0);
-          for (let c = 0; c < 3; c += 1) dst.data[i * 3 + c] = centers.floatAt(label, c);
+        for (let i = 0; i < labels.length; i += 1) {
+          const center = centers[labels[i]];
+          for (let c = 0; c < 3; c += 1) dst.data[i * 3 + c] = Math.round(center[c]);
         }
         break;
       }
 
       case 'split_merge': {
-        const blurred = track(new cv.Mat());
-        cv.GaussianBlur(src, blurred, new cv.Size(3, 3), 0, 0, cv.BORDER_DEFAULT);
-        dst = track(new cv.Mat(rows, cols, cv.CV_8UC3));
-        quadTreeSplit(blurred.data, blurred.channels(), Math.min(rows, cols), dst.data, p('stddev', 30));
+        const gauss = blurredGray(5);
+        dst = track(new cv.Mat(rows, cols, cv.CV_8UC1));
+        splitAndMerge(gauss.data, Math.min(rows, cols), dst.data, {
+          sth: p('stddev', 10),
+          tsize: p('minSize', 8),
+          mth: p('mergeTh', 5),
+        });
         break;
       }
 

@@ -448,10 +448,10 @@ const StudyArea = () => {
             </div>
 
             <p className="border-t border-line pt-3 text-2xs leading-4 text-ink-3">
-              Il visualizzatore lavora su Lena ridotta a 256×256. Canny, Harris, Hough Lines, Otsu, Otsu 2K e Region
-              Growing riproducono la logica del codice C++ (in Harris un solo cerchio per angolo); Hough Circles e
-              K-means usano le funzioni di OpenCV.js e Split and Merge mostra solo la fase di split. Dopo la prima
-              esecuzione, muovendo i cursori l'output si aggiorna da solo.
+              Il visualizzatore lavora su Lena ridotta a 256×256 e riproduce la logica del codice C++ (in Harris un
+              solo cerchio per angolo; Hough e Split and Merge mostrano solo l'immagine finale). Essendo l'immagine più
+              piccola, nei due Hough possono servire meno voti. Dopo la prima esecuzione, muovendo i cursori l'output
+              si aggiorna da solo.
             </p>
           </div>
         </section>
