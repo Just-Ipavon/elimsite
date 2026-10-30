@@ -144,7 +144,7 @@ const Home = () => (
       Il codice C++ non viene compilato: la verifica lo confronta testualmente con l&rsquo;implementazione di
       riferimento. Le anteprime usano OpenCV.js nel browser.
       <p className="mt-3">
-        made with <span aria-label="amore">&lt;3</span> by{' '}
+        made with <span aria-label="amore">♥</span> by{' '}
         <a
           href="https://github.com/Just-Ipavon"
           target="_blank"
