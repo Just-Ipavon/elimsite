@@ -143,6 +143,17 @@ const Home = () => (
     <footer className="mt-12 border-t border-line pt-4 md:mt-16 font-mono text-2xs leading-relaxed text-ink-3">
       Il codice C++ non viene compilato: la verifica lo confronta testualmente con l&rsquo;implementazione di
       riferimento. Le anteprime usano OpenCV.js nel browser.
+      <p className="mt-3">
+        made with <span aria-label="amore">&lt;3</span> by{' '}
+        <a
+          href="https://github.com/Just-Ipavon"
+          target="_blank"
+          rel="noreferrer"
+          className="underline-offset-2 hover:text-ink hover:underline"
+        >
+          Just-Ipavon
+        </a>
+      </p>
     </footer>
   </div>
 );
